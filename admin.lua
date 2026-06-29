@@ -398,7 +398,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin v2",
+        Title = "Painel Admin V13",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
