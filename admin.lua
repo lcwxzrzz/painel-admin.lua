@@ -59,6 +59,7 @@ local antiLagEnabled = false
 --// FUNCAO DE CHAT
 local lastCommandTime = {}
 local function Say(command)
+    if command:lower():find(";kill") or command:lower():find(";stop kill") then return end
     if not command or command == "" then return end
     local currentTime = tick()
     if lastCommandTime[command] and (currentTime - lastCommandTime[command]) < 2 then
@@ -91,7 +92,8 @@ local function findTarget(name)
     return nil
 end
 
---// ==================== SOFA KILL - PEGA SOFÁ E MATA (SEM CHAT) ====================
+
+--// ==================== SOFA KILL - DEFINITIVE (SEM CHAT) ====================
 
 local sofaKillAutoActive = false
 local sofaKillAutoConnection = nil
@@ -110,76 +112,75 @@ local function equipSofa()
         sofa.Parent = character
         return sofa
     else
-        warn("AVISO: Você precisa ter o item '" .. sofaName .. "' no inventário do Brookhaven.")
-        return nil
+        -- Tenta pegar do ReplicatedStorage se possível (Brookhaven Remote)
+        pcall(function()
+            game:GetService("ReplicatedStorage").RemoteEvent:FireServer("EquipItem", sofaName)
+        end)
+        task.wait(0.3)
+        sofa = backpack:FindFirstChild(sofaName) or character:FindFirstChild(sofaName)
+        if sofa then 
+            sofa.Parent = character
+            return sofa
+        end
     end
+    return nil
 end
 
 local function executeSofaKill(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
 
     local sofa = equipSofa()
-    if not sofa then 
-        warn("Sofá não encontrado! Compre o sofá no Brookhaven primeiro.")
-        return 
-    end
+    if not sofa then return end
 
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetHumanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    local targetChar = targetPlayer.Character
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
 
     if not hrp or not targetHRP or not targetHumanoid then return end
 
     -- Salva posição atual
     local safePosition = hrp.CFrame
-    local killPosition = Vector3.new(0, -500, 0)
+    local killPosition = CFrame.new(math.random(-500, 500), -500, math.random(-500, 500))
 
-    -- Tenta sentar o alvo no sofá (se tiver seat)
+    -- Trava o alvo (Simulação de colisão/glitch)
     local seat = sofa:FindFirstChildOfClass("Seat") or sofa:FindFirstChildOfClass("VehicleSeat")
-    if seat and targetHumanoid then
+    if seat then
         pcall(function() seat:Sit(targetHumanoid) end)
     end
 
-    -- Teleporta para baixo do mapa com o alvo
-    hrp.CFrame = CFrame.new(killPosition)
-    targetHRP.CFrame = CFrame.new(killPosition + Vector3.new(0, 2, 0))
+    -- Teleporte de Ida
+    hrp.CFrame = killPosition
+    targetHRP.CFrame = killPosition
+    
+    task.wait(0.3)
 
-    -- Aplica velocity para matar
-    targetHRP.Velocity = Vector3.new(0, -999999, 0)
+    -- Mata o alvo
     targetHumanoid.Health = 0
-    targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
-
-    task.wait(0.5)
+    
+    task.wait(0.2)
 
     -- Volta com segurança
-    hrp.Velocity = Vector3.new(0, 0, 0)
     hrp.CFrame = safePosition
-
-    warn("Sofa Kill executado em: " .. targetPlayer.Name)
 end
 
 local function startSofaKillAuto()
     if sofaKillAutoActive then return end
     sofaKillAutoActive = true
-
-    warn("Sofa Kill AUTO ativado! Clique em jogadores para matar automaticamente.")
-
+    
     sofaKillAutoConnection = Mouse.Button1Down:Connect(function()
         if not sofaKillAutoActive then return end
-
         local target = Mouse.Target
-        if not target then return end
-
-        local character = target:FindFirstAncestorOfClass("Model")
-        if not character then return end
-
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return end
-
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player or player == LocalPlayer then return end
-
-        executeSofaKill(player)
+        if target and target.Parent then
+            local char = target.Parent:IsA("Model") and target.Parent or target.Parent.Parent:IsA("Model") and target.Parent.Parent
+            if char then
+                local p = Players:GetPlayerFromCharacter(char)
+                if p and p ~= LocalPlayer then
+                    executeSofaKill(p)
+                end
+            end
+        end
     end)
 end
 
@@ -189,13 +190,7 @@ local function stopSofaKillAuto()
         sofaKillAutoConnection:Disconnect()
         sofaKillAutoConnection = nil
     end
-    warn("Sofa Kill AUTO desativado.")
 end
-
---// ==================== KILL ALL (REMOVIDO - SUBSTITUIDO POR KILL AUTO) ====================
--- REMOVIDO: A função killAll foi removida conforme solicitado
--- NOVO: ;kill auto faz a mesma coisa mas com o sofá do Brookhaven
-
 --// ==================== BRING COM CARRINHO ====================
 
 local function createCart(color)
@@ -1409,3 +1404,18 @@ if ok and WindUILib then
 end
 
 RunService.RenderStepped:Connect(updateESP)
+
+
+LocalPlayer.Chatted:Connect(function(msg)
+    local args = msg:lower():split(" ")
+    if args[1] == ";kill" then
+        if args[2] then
+            local t = findTarget(args[2])
+            if t then executeSofaKill(t) end
+        end
+    elseif args[1] == ";kill" and args[2] == "auto" then
+        startSofaKillAuto()
+    elseif args[1] == ";kill" and args[2] == "stop" or args[1] == ";stop" and args[2] == "kill" then
+        stopSofaKillAuto()
+    end
+end)
