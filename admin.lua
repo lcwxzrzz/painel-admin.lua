@@ -84,16 +84,20 @@ local killAllConnection = nil
 
 --// Função para enviar comandos no chat (Aprimorada para garantir envio)
 local function Say(message)
+    -- Removida a menção de nomes ou mensagens automáticas para evitar detecção e spam
+    -- Apenas envia se for estritamente necessário para comandos do servidor
+    if not message:find(";") then return end 
+    
     if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
         local canal = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
         if canal then
             canal:SendAsync(message)
-        else
-            -- Fallback if RBXGeneral not found, though it should exist
-            game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(message, "All")
         end
     else
-        game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(message, "All")
+        local event = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+        if event and event:FindFirstChild("SayMessageRequest") then
+            event.SayMessageRequest:FireServer(message, "All")
+        end
     end
 end
 
@@ -146,78 +150,48 @@ end
 
 local function executeTornado(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
-    local targetChar = targetPlayer.Character
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
 
-    local tornadoModel = Instance.new("Model")
-    tornadoModel.Name = "Tornado"
-    tornadoModel.Parent = Workspace
+    local tornadoParts = {}
+    for i = 1, 15 do
+        local p = Instance.new("Part")
+        p.Size = Vector3.new(math.random(2, 6), 1, math.random(2, 6))
+        p.Anchored = true
+        p.CanCollide = true
+        p.Material = Enum.Material.Concrete
+        p.Parent = Workspace
+        table.insert(tornadoParts, p)
+    end
 
-    local centerPart = Instance.new("Part")
-    centerPart.Size = Vector3.new(1, 10, 1)
-    centerPart.Position = targetRoot.Position + Vector3.new(0, 5, 0)
-    centerPart.Transparency = 1
-    centerPart.CanCollide = false
-    centerPart.Anchored = true
-    centerPart.Parent = tornadoModel
-
-    local particleEmitter = Instance.new("ParticleEmitter")
-    particleEmitter.Texture = "rbxassetid://134643360" -- Exemplo de textura de fumaça/nuvem
-    particleEmitter.Color = ColorSequence.new(Color3.fromRGB(100, 100, 100), Color3.fromRGB(50, 50, 50))
-    particleEmitter.Size = NumberSequence.new(0.5, 5)
-    particleEmitter.Transparency = NumberSequence.new(0, 0.8)
-    particleEmitter.Lifetime = NumberRange.new(1, 3)
-    particleEmitter.Rate = 200
-    particleEmitter.Speed = NumberRange.new(5, 15)
-    particleEmitter.SpreadAngle = Vector2.new(0, 180)
-    particleEmitter.Rotation = NumberRange.new(-180, 180)
-    particleEmitter.RotSpeed = NumberRange.new(-100, 100)
-    particleEmitter.Drag = 0.1
-    particleEmitter.Acceleration = Vector3.new(0, 10, 0) -- Para subir
-    particleEmitter.LightEmission = 0.5
-    particleEmitter.Parent = centerPart
-
-    local sound = Instance.new("Sound")
-    sound.SoundId = "rbxassetid://183046481" -- Exemplo de som de vento/tornado
-    sound.Volume = 1
-    sound.Looped = true
-    sound.Parent = centerPart
-    sound:Play()
-
-    local rotationSpeed = 10
-    local upwardForce = 100
-    local tornadoConnection = RunService.Heartbeat:Connect(function()
+    local tornadoConnection
+    tornadoConnection = RunService.Heartbeat:Connect(function()
         if not targetRoot or not targetRoot.Parent then
-            tornadoModel:Destroy()
+            for _, p in ipairs(tornadoParts) do p:Destroy() end
+            tornadoConnection:Disconnect()
             return
         end
-        centerPart.Position = targetRoot.Position + Vector3.new(0, 5, 0)
-        centerPart.CFrame = centerPart.CFrame * CFrame.Angles(0, math.rad(rotationSpeed), 0)
-
-        -- Aplica força para cima e rotacional ao alvo
-        local bodyVelocity = targetRoot:FindFirstChild("TornadoBV") or Instance.new("BodyVelocity")
-        bodyVelocity.Name = "TornadoBV"
-        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bodyVelocity.Velocity = Vector3.new(0, upwardForce, 0) + (targetRoot.CFrame.RightVector * 50) -- Força lateral para rotação
-        bodyVelocity.Parent = targetRoot
-
-        local bodyGyro = targetRoot:FindFirstChild("TornadoBG") or Instance.new("BodyGyro")
-        bodyGyro.Name = "TornadoBG"
-        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        bodyGyro.CFrame = CFrame.new(targetRoot.Position, targetRoot.Position + Vector3.new(math.random(-1,1), 0, math.random(-1,1))) * CFrame.Angles(0, math.rad(rotationSpeed), 0)
-        bodyGyro.Parent = targetRoot
+        local t = tick()
+        for i, p in ipairs(tornadoParts) do
+            local angle = (i / #tornadoParts) * math.pi * 2 + t * 5
+            local radius = 5 + math.sin(t + i) * 2
+            local x = math.cos(angle) * radius
+            local z = math.sin(angle) * radius
+            p.CFrame = targetRoot.CFrame * CFrame.new(x, (i - 8) * 1.5, z) * CFrame.Angles(0, angle, 0)
+            
+            -- Força física real: joga quem encostar
+            p.Touched:Connect(function(hit)
+                if hit.Parent and hit.Parent:FindFirstChild("HumanoidRootPart") and hit.Parent ~= targetPlayer.Character then
+                    hit.Parent.HumanoidRootPart.Velocity = Vector3.new(x * 50, 100, z * 50)
+                end
+            end)
+        end
     end)
-
-    Debris:AddItem(tornadoModel, 15) -- Tornado dura 15 segundos
-    Debris:AddItem(sound, 15)
-    Debris:AddItem(particleEmitter, 15)
-    task.delay(15, function()
+    Debris:AddItem(tornadoConnection, 20)
+    task.delay(20, function() 
+        for _, p in ipairs(tornadoParts) do p:Destroy() end
         if tornadoConnection then tornadoConnection:Disconnect() end
-        if targetRoot and targetRoot:FindFirstChild("TornadoBV") then targetRoot.TornadoBV:Destroy() end
-        if targetRoot and targetRoot:FindFirstChild("TornadoBG") then targetRoot.TornadoBG:Destroy() end
     end)
-    warn("Tornado criado ao redor de " .. targetPlayer.Name .. ".")
 end
 
 local function startAura()
@@ -225,22 +199,28 @@ local function startAura()
     auraActive = true
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local root = char.HumanoidRootPart
-
-    local numChairs = 8 -- Número de cadeiras
-    local radius = 8 -- Raio da aura
-    local angleIncrement = 2 * math.pi / numChairs
-
+    
+    local numChairs = 6
+    local radius = 7
+    
     for i = 1, numChairs do
-        local chair = Instance.new("Part")
-        chair.Shape = Enum.PartType.Ball
+        -- Tenta pegar um modelo de cadeira real do jogo ou cria uma física
+        local chair = Instance.new("Seat")
         chair.Size = Vector3.new(2, 2, 2)
-        chair.Color = Color3.fromHSV(i / numChairs, 1, 1) -- Cores diferentes
-        chair.Material = Enum.Material.Neon
-        chair.CanCollide = false
-        chair.Anchored = false
+        chair.BrickColor = BrickColor.new("Bright red")
+        chair.Anchored = true
+        chair.CanCollide = true
         chair.Parent = Workspace
+        
+        -- Adiciona um encosto visual
+        local back = Instance.new("Part", chair)
+        back.Size = Vector3.new(2, 2, 0.5)
+        back.Position = chair.Position + Vector3.new(0, 1, 0.7)
+        back.Anchored = true
+        back.CanCollide = true
+        
         table.insert(auraParts, chair)
+        table.insert(auraParts, back)
     end
 
     auraConnection = RunService.Heartbeat:Connect(function()
@@ -248,17 +228,22 @@ local function startAura()
             stopAura()
             return
         end
-        local currentRoot = LocalPlayer.Character.HumanoidRootPart
-        local timeOffset = tick() * 2 -- Velocidade de rotação
-
-        for i, chair in ipairs(auraParts) do
-            local angle = (i - 1) * angleIncrement + timeOffset
-            local x = radius * math.cos(angle)
-            local z = radius * math.sin(angle)
-            chair.CFrame = currentRoot.CFrame * CFrame.new(x, 0, z) * CFrame.Angles(0, angle, 0)
+        local root = LocalPlayer.Character.HumanoidRootPart
+        local t = tick() * 3
+        
+        for i = 1, numChairs do
+            local chair = auraParts[(i-1)*2 + 1]
+            local back = auraParts[(i-1)*2 + 2]
+            if chair and back then
+                local angle = (i / numChairs) * math.pi * 2 + t
+                local x = math.cos(angle) * radius
+                local z = math.sin(angle) * radius
+                local targetCF = root.CFrame * CFrame.new(x, 0, z) * CFrame.Angles(0, -angle, 0)
+                chair.CFrame = targetCF
+                back.CFrame = targetCF * CFrame.new(0, 1, 0.7)
+            end
         end
     end)
-    warn("Aura de cadeiras ativada.")
 end
 
 local function stopAura()
@@ -361,40 +346,46 @@ end
 --// Função de Kill Aprimorada com Fling (Client-side)
 local function executeKillWithFling(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local targetChar = targetPlayer.Character
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    
+    if not hrp or not targetHRP then return end
+    
+    -- Método de Fling Real (Invisível e Poderoso)
+    local oldPos = hrp.CFrame
+    local flingPart = Instance.new("Part")
+    flingPart.Size = Vector3.new(5, 5, 5)
+    flingPart.Transparency = 1
+    flingPart.CanCollide = false
+    flingPart.Parent = Workspace
+    
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.Velocity = Vector3.new(10000, 10000, 10000)
+    bodyVelocity.Parent = flingPart
+    
+    local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+    bodyAngularVelocity.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bodyAngularVelocity.AngularVelocity = Vector3.new(10000, 10000, 10000)
+    bodyAngularVelocity.Parent = flingPart
+    
+    task.spawn(function()
+        for i = 1, 50 do
+            if not targetHRP or not targetHRP.Parent then break end
+            flingPart.CFrame = targetHRP.CFrame
+            task.wait()
+        end
+        flingPart:Destroy()
+    end)
+    
+    -- Tenta matar forçando o estado Dead se possível (client-side bypass)
     local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-    if not targetRoot or not targetHumanoid then return end
-
-    -- Tenta desabilitar o controle do servidor sobre o personagem do alvo
-    targetHumanoid.PlatformStand = true
-
-    -- Aplica uma força para cima extrema e depois teletransporta para fora do mapa
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "FlingBV"
-    bv.Parent = targetRoot
-    bv.Velocity = Vector3.new(0, 10000, 0) -- Força para cima extrema
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    Debris:AddItem(bv, 0.5) -- Remove rapidamente
-
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "FlingBG"
-    bg.Parent = targetRoot
-    bg.CFrame = CFrame.new(targetRoot.Position, targetRoot.Position + Vector3.new(math.random(-10,10), 0, math.random(-10,10)))
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    Debris:AddItem(bg, 0.5)
-
-    task.wait(0.1)
-    targetRoot.CFrame = CFrame.new(targetRoot.Position.X, 10000, targetRoot.Position.Z)
-    task.wait(0.1)
-    targetRoot.CFrame = CFrame.new(targetRoot.Position.X, -10000, targetRoot.Position.Z)
-
-    -- Tenta resetar o personagem do alvo (pode ser bloqueado pelo servidor)
-    targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
-    targetHumanoid.Health = 0
-
-    -- Desabilita PlatformStand após um tempo
-    task.delay(1, function() if targetHumanoid then targetHumanoid.PlatformStand = false end end)
+    if targetHumanoid then
+        targetHumanoid.Health = 0
+        targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
+    end
 end
 
 local function executeKillWithCart(targetPlayer)
@@ -435,21 +426,20 @@ local function executeBringWithTeleport(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-    if not targetRoot or not targetHumanoid then return end
+    if not targetRoot then return end
 
     local adminChar = LocalPlayer.Character
     local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
     if not adminRoot then return end
 
-    -- Tenta desabilitar o controle do servidor sobre o personagem do alvo
-    targetHumanoid.PlatformStand = true
-
-    -- Teleporta o alvo para a posição do admin, um pouco acima para evitar colisão imediata
-    targetRoot.CFrame = adminRoot.CFrame * CFrame.new(0, 5, 0)
-
-    -- Desabilita PlatformStand após um tempo
-    task.delay(1, function() if targetHumanoid then targetHumanoid.PlatformStand = false end end)
+    -- Método de Bring Real (Usa Velocity para forçar o movimento se o teleporte falhar)
+    targetRoot.CFrame = adminRoot.CFrame * CFrame.new(0, 2, -3)
+    
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bv.Velocity = (adminRoot.Position - targetRoot.Position).Unit * 50
+    bv.Parent = targetRoot
+    Debris:AddItem(bv, 0.5)
 end
 
 local function executeBringWithCart(targetPlayer)
@@ -478,7 +468,7 @@ local function executeBringWithCart(targetPlayer)
             bodyPosition.Position = adminRoot.Position + Vector3.new(0, 5, 0)
             bodyGyro.CFrame = adminRoot.CFrame
             
-           task.wait(2) -- Tempo para chegar ao admin
+            task.wait(2) -- Tempo para chegar ao admin
             
             -- Libera o alvo e destrói o carrinho
             seat.Occupant = nil
@@ -646,21 +636,37 @@ end
 --// Função Jumpscares
 local function executeJS(type, target)
     if not target or not target.Character then return end
+    local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
     if type == 1 then
-        local start = tick()
-        local c; c = RunService.RenderStepped:Connect(function()
-            if tick()-start > 0.5 then c:Disconnect() return end
-            Camera.CFrame = Camera.CFrame * CFrame.Angles(math.rad(math.random(-4,4)), math.rad(math.random(-4,4)), 0)
-        end)
-        local s = Instance.new("Sound", target.Character.Head); s.SoundId = "rbxassetid://12221967"; s.Volume = 3; s:Play()
+        -- Jumpscare Real: Grito alto e Flash na cara
+        local s = Instance.new("Sound", hrp)
+        s.SoundId = "rbxassetid://5567523571"
+        s.Volume = 10
+        s:Play()
+        
+        local p = Instance.new("Part", Workspace)
+        p.Size = Vector3.new(10, 10, 10)
+        p.CFrame = hrp.CFrame * CFrame.new(0, 0, -2)
+        p.Transparency = 0.3
+        p.CanCollide = false
+        p.Anchored = true
+        p.Color = Color3.new(1, 0, 0)
+        p.Material = Enum.Material.Neon
+        Debris:AddItem(p, 1.5)
     elseif type == 2 then
-        local cc = Instance.new("ColorCorrectionEffect", Lighting); cc.TintColor = Color3.fromRGB(255, 0, 0); cc.Saturation = 3
-        local s = Instance.new("Sound", target.Character.Head); s.SoundId = "rbxassetid://9114818"; s.Volume = 2; s:Play()
-        task.wait(1.2); cc:Destroy()
+        -- Teleporte para o Vácuo e Som de Terror
+        hrp.CFrame = CFrame.new(0, -1000, 0)
+        local s = Instance.new("Sound", hrp)
+        s.SoundId = "rbxassetid://142376088"
+        s.Volume = 5
+        s:Play()
     elseif type == 3 then
-        local cc = Instance.new("ColorCorrectionEffect", Lighting); cc.TintColor = Color3.fromRGB(0, 255, 255); cc.Brightness = 3
-        local s = Instance.new("Sound", target.Character.Head); s.SoundId = "rbxassetid://9114818"; s.PlaybackSpeed = 1.8; s.Volume = 2; s:Play()
-        task.wait(0.8); cc:Destroy()
+        -- Inversão Real e Som Estourado
+        local cc = Instance.new("ColorCorrectionEffect", Lighting); cc.Invert = true
+        local s = Instance.new("Sound", hrp); s.SoundId = "rbxassetid://138089472"; s.Volume = 5; s:Play()
+        task.wait(1.5); cc:Destroy()
     end
 end
 
@@ -809,7 +815,7 @@ if ok and WindUILib then
     local TabVisuals = Window:Tab({ Title = "Efeitos Visuais", Icon = "sparkles" })
     local TabTools = Window:Tab({ Title = "Ferramentas", Icon = "wrench" }) -- Nova aba de Ferramentas
     local TabJumpscares = Window:Tab({ Title = "Jumpscares e Avatar", Icon = "zap" })
-    local TabSecurity = Window:Tab({ Title = "🛡️ Segurança", Icon = "shield-alt" }) -- Nova aba de Segurança
+    local TabSecurity = Window:Tab({ Title = "[!] Segurança", Icon = "shield-alt" }) -- Nova aba de Segurança
 
     local function getPlayersList()
         local t = {}
@@ -910,7 +916,7 @@ SectionVisTarget:Button({
         Callback = function(v)
             espActive = v
             updateESP()
-        end
+         end
     })
 
     -- Seção de Segurança
