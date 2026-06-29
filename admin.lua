@@ -1,11 +1,12 @@
 --[[
-    PAINEL ADMIN V12 - DEFINITIVE EDITION (Atualizado com as solicitações do usuário)
+    PAINEL ADMIN V13 - DEFINITIVE EDITION (Atualizado com as solicitações do usuário)
     Melhorias:
     - Boombox (ferramenta azul voadora) adicionada na aba "Ferramentas".
-    - Sistema de música aprimorado para aceitar IDs e tocar em loop.
-    - Comandos ";bring player", ";bring all", ";kill player", ";kill all" e ";stop kill" implementados com mecânicas de carrinho e teletransporte/afundamento.
+    - Sistema de música aprimorado com controle de volume deslizante e ID padrão.
+    - Comandos ";bring player", ";bring all", ";kill player", ";kill all" e ";stop kill" implementados com mecânicas de carrinho e teletransporte/afundamento (client-side).
+    - Iluminação do Backrooms ajustada para um ambiente mais sombrio e menos luminoso.
+    - Interface reorganizada: comandos ;bring movidos para a aba "Efeitos Visuais".
     - Labirinto dos Backrooms corrigido para ser um labirinto real, denso e fechado, sem aparência de cubo.
-    - Comandos ";puxar player" e ";bring ALL" agora enviam comandos de chat para o servidor de forma mais robusta, garantindo que sejam processados por scripts de admin (requer script de admin no servidor).
     - Removidas menções de nomes de jogadores no chat para evitar spam e manter a discrição.
     - Nome colorido sobre a cabeça com visual aprimorado e botão para remover.
     - Nova aba "Ferramentas" adicionada com itens especiais que podem ser obtidos com um clique, sem enviar mensagens no chat.
@@ -25,6 +26,7 @@ local TextChatService = game:GetService("TextChatService")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService") -- Adicionado para Boombox
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -34,6 +36,7 @@ local viewingTarget = nil
 local viewConnection = nil
 local bangLoop = nil
 local currentSound = nil
+local currentSoundVolume = 0.5 -- Volume inicial padrão
 local backroomsFolder = nil
 local backroomsActive = false
 local TargetName = ""
@@ -103,7 +106,7 @@ local function createCart(color)
     return cartModel, seat, bodyPosition, bodyGyro
 end
 
---// Função de Kill Aprimorada com Carrinho
+--// Função de Kill Aprimorada com Carrinho (Client-side)
 local function executeKillWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -114,7 +117,10 @@ local function executeKillWithCart(targetPlayer)
     cart.Parent = Workspace
     cart:SetPrimaryPartCFrame(targetRoot.CFrame * CFrame.new(0, 5, 0)) -- Posiciona o carrinho acima do alvo
 
-    -- Espera o alvo sentar no carrinho
+    -- Tenta forçar o alvo a sentar no carrinho
+    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0) -- Move o alvo para o assento
+    seat:Sit(targetChar.Humanoid)
+
     local seatConnection
     seatConnection = seat.OccupantChanged:Connect(function(occupant)
         if occupant and occupant.Parent == targetChar then
@@ -126,19 +132,14 @@ local function executeKillWithCart(targetPlayer)
             task.wait(5) -- Tempo para afundar
             
             -- Libera o alvo e destrói o carrinho
-            seat:RemoveTag("Occupant") -- Força a saída
             seat.Occupant = nil
             cart:Destroy()
         end
     end)
-
-    -- Tenta forçar o alvo a sentar no carrinho
-    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0) -- Move o alvo para o assento
-    seat:Sit(targetChar.Humanoid)
     Debris:AddItem(cart, 10) -- Garante que o carrinho será destruído se algo der errado
 end
 
---// Função de Bring Aprimorada com Carrinho
+--// Função de Bring Aprimorada com Carrinho (Client-side)
 local function executeBringWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -153,6 +154,10 @@ local function executeBringWithCart(targetPlayer)
     cart.Parent = Workspace
     cart:SetPrimaryPartCFrame(targetRoot.CFrame * CFrame.new(0, 5, 0)) -- Posiciona o carrinho acima do alvo
 
+    -- Tenta forçar o alvo a sentar no carrinho
+    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0)
+    seat:Sit(targetChar.Humanoid)
+
     local seatConnection
     seatConnection = seat.OccupantChanged:Connect(function(occupant)
         if occupant and occupant.Parent == targetChar then
@@ -164,14 +169,10 @@ local function executeBringWithCart(targetPlayer)
             task.wait(2) -- Tempo para chegar ao admin
             
             -- Libera o alvo e destrói o carrinho
-            seat:RemoveTag("Occupant")
             seat.Occupant = nil
             cart:Destroy()
         end
     end)
-
-    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0)
-    seat:Sit(targetChar.Humanoid)
     Debris:AddItem(cart, 10)
 end
 
@@ -247,10 +248,9 @@ local function removeColoredName()
     end
 end
 
---// Função Backrooms LABIRINTO REAL V11 (Aprimorado)
+--// Função Backrooms LABIRINTO REAL V11 (Aprimorado - Iluminação Ajustada)
 local function executeBackrooms()
     backroomsActive = true
-    -- Say(";backrooms") -- Removido para evitar spam no chat
     if backroomsFolder then backroomsFolder:Destroy() end
     
     backroomsFolder = Instance.new("Folder", Workspace)
@@ -258,19 +258,20 @@ local function executeBackrooms()
     
     local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
     
-    Lighting.FogColor = Color3.fromRGB(50, 50, 40)
-    Lighting.FogEnd = 120
-    Lighting.Ambient = Color3.fromRGB(60, 60, 50)
-    Lighting.OutdoorAmbient = Color3.fromRGB(40, 40, 30)
-    Lighting.Brightness = 0.6
+    -- Iluminação ajustada para ser mais sombria
+    Lighting.FogColor = Color3.fromRGB(20, 20, 15) -- Névoa mais escura
+    Lighting.FogEnd = 80 -- Névoa mais próxima
+    Lighting.Ambient = Color3.fromRGB(30, 30, 25) -- Ambiente mais escuro
+    Lighting.OutdoorAmbient = Color3.fromRGB(15, 15, 10) -- Ambiente externo mais escuro
+    Lighting.Brightness = 0.3 -- Brilho geral reduzido
     
     local function createPart(pos, size, color, material, name)
         local p = Instance.new("Part", backroomsFolder)
         p.Size = size
         p.Position = pos
         p.Anchored = true
-        p.Color = color or Color3.fromRGB(210, 200, 160)
-        p.Material = material or Enum.Material.Plaster
+        p.Color = color or Color3.fromRGB(100, 90, 70) -- Cor das paredes mais escura
+        p.Material = material or Enum.Material.Concrete -- Material mais áspero
         p.Name = name or "BackroomsPart"
         return p
     end
@@ -285,8 +286,8 @@ local function executeBackrooms()
     local startZ = basePos.Z - (mazeGridSize * cellSize / 2)
 
     -- Chão e Teto
-    createPart(basePos, Vector3.new(mazeGridSize * cellSize, 1, mazeGridSize * cellSize), Color3.fromRGB(130, 125, 110), Enum.Material.Concrete, "Floor")
-    createPart(basePos + Vector3.new(0, wallHeight, 0), Vector3.new(mazeGridSize * cellSize, 1, mazeGridSize * cellSize), Color3.fromRGB(220, 220, 200), Enum.Material.Plaster, "Ceiling")
+    createPart(basePos, Vector3.new(mazeGridSize * cellSize, 1, mazeGridSize * cellSize), Color3.fromRGB(60, 55, 45), Enum.Material.Concrete, "Floor")
+    createPart(basePos + Vector3.new(0, wallHeight, 0), Vector3.new(mazeGridSize * cellSize, 1, mazeGridSize * cellSize), Color3.fromRGB(120, 110, 90), Enum.Material.Concrete, "Ceiling")
 
     -- Gerar paredes externas para fechar o labirinto
     createPart(Vector3.new(basePos.X, basePos.Y + wallHeight/2, startZ - halfWallThickness), Vector3.new(mazeGridSize * cellSize + wallThickness, wallHeight, wallThickness), nil, nil, "WallN")
@@ -309,11 +310,11 @@ local function executeBackrooms()
                 createPart(Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ), Vector3.new(wallThickness, wallHeight, cellSize))
             end
 
-            -- Adicionar luzes piscantes
+            -- Adicionar luzes piscantes (menos brilhantes)
             if math.random() > 0.7 then -- Menos luzes para um ambiente mais escuro
-                local lp = createPart(Vector3.new(currentCellX, basePos.Y + wallHeight - 0.2, currentCellZ), Vector3.new(6, 0.2, 3), Color3.fromRGB(255, 255, 220), Enum.Material.Neon, "LightPart")
+                local lp = createPart(Vector3.new(currentCellX, basePos.Y + wallHeight - 0.2, currentCellZ), Vector3.new(6, 0.2, 3), Color3.fromRGB(150, 150, 120), Enum.Material.Neon, "LightPart")
                 local light = Instance.new("PointLight", lp)
-                light.Brightness = 2; light.Range = 45; light.Color = Color3.fromRGB(255, 255, 180)
+                light.Brightness = 0.8; light.Range = 25; light.Color = Color3.fromRGB(200, 200, 150) -- Luzes mais fracas
                 task.spawn(function()
                     while backroomsActive and lp.Parent do
                         task.wait(math.random(10, 30)); light.Enabled = false; lp.Material = Enum.Material.SmoothPlastic
@@ -391,7 +392,7 @@ local function createFlyingBoombox()
     local sound = Instance.new("Sound", handle)
     sound.Name = "BoomboxSound"
     sound.SoundId = "rbxassetid://83032125898517" -- ID de música padrão
-    sound.Volume = 1
+    sound.Volume = currentSoundVolume -- Usa o volume atual
     sound.Looped = true
 
     local attachment = Instance.new("Attachment", handle)
@@ -461,7 +462,7 @@ local function createFlyingBoombox()
                 if moveVector.Magnitude > 0 then
                     bodyVelocity.Velocity = moveVector.Unit * currentFlySpeed
                 else
-                    bodyVelocity.Velocity= Vector3.new(0,0,0)
+                    bodyVelocity.Velocity = Vector3.new(0,0,0)
                 end
                 bodyGyro.CFrame = Camera.CFrame
             end
@@ -478,7 +479,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin v2",
+        Title = "Painel Admin V13",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
@@ -534,15 +535,22 @@ if ok and WindUILib then
     SectionActions:Button({Title = ";view", Desc = "Observa a câmera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view " .. t.Name) viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
     SectionActions:Button({Title = ";unview", Desc = "Retorna a câmera para você", Callback = function() Say(";unview") if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
     
-    -- Novo botão: ;bring player
-    SectionActions:Button({
+    local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
+    local DropdownVis = SectionVisTarget:Dropdown({
+        Title = "Selecionar Jogador",
+        Values = getPlayersList(),
+        Callback = function(opt) TargetName = opt end
+    })
+
+    -- Novo botão: ;bring player (Movido para Efeitos Visuais)
+    SectionVisTarget:Button({
         Title = ";bring player",
         Desc = "Puxa o jogador selecionado para sua localização com um carrinho",
         Callback = function() local t = findTarget(TargetName) if t then executeBringWithCart(t) end end
     })
 
-    -- Novo botão: ;bring ALL
-    SectionActions:Button({
+    -- Novo botão: ;bring ALL (Movido para Efeitos Visuais)
+    SectionVisTarget:Button({
         Title = ";bring ALL",
         Desc = "Puxa todos os jogadores para sua localização com carrinhos",
         Callback = function() 
@@ -554,13 +562,6 @@ if ok and WindUILib then
         end
     })
 
-    local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
-    local DropdownVis = SectionVisTarget:Dropdown({
-        Title = "Selecionar Jogador",
-        Values = getPlayersList(),
-        Callback = function(opt) TargetName = opt end
-    })
-    
     local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
     SectionAmb:Button({Title = "Entrar no Backrooms", Desc = "Labirinto INFINITO com teto baixo e luzes", Callback = function() executeBackrooms() end})
     SectionAmb:Button({Title = "Sair do Backrooms", Desc = "Reseta o ambiente e te tira de lá (SEM MORRER)", Callback = function() backroomsActive = false; if backroomsFolder then backroomsFolder:Destroy() end Lighting.FogEnd = 100000; Lighting.Ambient = Color3.fromRGB(127, 127, 127); Lighting.Brightness = 2; if LocalPlayer.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(0, 5, 0) end end})
@@ -588,11 +589,22 @@ if ok and WindUILib then
         if currentSound then currentSound:Destroy() end 
         currentSound = Instance.new("Sound", Workspace)
         currentSound.SoundId = "rbxassetid://"..MusicID:gsub("%D", "") 
-        currentSound.Volume = 2 
+        currentSound.Volume = currentSoundVolume -- Usa o volume atual
         currentSound.Looped = true 
         currentSound:Play() 
     end})
     SectionMusic:Button({Title = "Parar Música", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
+    SectionMusic:Slider({
+        Title = "Volume da Música",
+        Value = { Min = 0, Max = 1, Default = currentSoundVolume },
+        Step = 0.05,
+        Callback = function(value)
+            currentSoundVolume = value
+            if currentSound then
+                currentSound.Volume = value
+            end
+        end
+    })
 
     -- Nova Seção de Ferramentas
     local SectionTools = TabTools:Section({ Title = "Ferramentas Especiais", Icon = "tools", Opened = true })
@@ -691,6 +703,3 @@ end
 
 -- Conecta a atualização do ESP a um loop de renderização
 RunService.RenderStepped:Connect(updateESP)
-
--- Necessário para o Boombox Voador
-local UserInputService = game:GetService("UserInputService")
