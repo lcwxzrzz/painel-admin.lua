@@ -1,10 +1,12 @@
 --[[
-    PAINEL ADMIN V2 - DEFINITIVE EDITION
+    PAINEL ADMIN V2 - DEFINITIVE EDITION (CORRIGIDO)
 
     MELHORIAS V2:
     - Nome: "Painel Admin V2"
     - Backrooms: Labirinto REAL com algoritmo Recursive Backtracker, paredes FISICAS, sem ver o fim
-    - ;kill: Sofa na mao, gira em volta do alvo, pega no sofa, flinga para fora do mapa
+    - ;kill: Pega o sofá do Brookhaven, teleporta o alvo para baixo do mapa e volta com segurança (SEM enviar no chat)
+    - ;kill auto: Mesma função do ;kill mas ativado automaticamente ao clicar em jogadores (loop infinito)
+    - ;stop kill: Para o ;kill auto
     - ;aura: Cadeiras REAIS visiveis para todos, com fisica real
     - Lista de jogadores: Botao "Atualizar Lista" adicionado
     - Anti-Tools/Kick/Ban: FUNCIONANDO com hooks persistentes
@@ -25,6 +27,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
 --// Variaveis de Estado
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,10 +47,6 @@ local AvatarName = ""
 local currentBillboard = nil
 local espActive = false
 local espAdornments = {}
-local killAllActive = false
-local killAllConnection = nil
-local sofaKillTool = nil
-local sofaKillSpinning = false
 
 --// VARIAVEIS ANTI
 local antiToolsEnabled = false
@@ -92,223 +91,110 @@ local function findTarget(name)
     return nil
 end
 
---// ==================== SOFA KILL - GIRA E FLINGA ====================
+--// ==================== SOFA KILL - PEGA SOFÁ E MATA (SEM CHAT) ====================
 
-local function createSofaKillTool()
-    if sofaKillTool then sofaKillTool:Destroy() end
+local sofaKillAutoActive = false
+local sofaKillAutoConnection = nil
 
-    local tool = Instance.new("Tool")
-    tool.Name = "Sofa Killer"
-    tool.ToolTip = "Gira em volta do alvo e flinga para fora do mapa"
+local function equipSofa()
+    local backpack = LocalPlayer.Backpack
+    local character = LocalPlayer.Character
+    local sofaName = "Couch"
 
-    local handle = Instance.new("Part")
-    handle.Name = "Handle"
-    handle.Size = Vector3.new(6, 3, 3)
-    handle.BrickColor = BrickColor.new("Bright red")
-    handle.Material = Enum.Material.Fabric
-    handle.CanCollide = false
-    handle.Parent = tool
+    -- Verifica se já está na mão
+    if character:FindFirstChild(sofaName) then return character[sofaName] end
 
-    local seat = Instance.new("Seat")
-    seat.Name = "SofaSeat"
-    seat.Size = Vector3.new(5, 1, 2.5)
-    seat.Position = Vector3.new(0, 1.5, 0)
-    seat.Transparency = 1
-    seat.CanCollide = false
-    seat.Parent = handle
-
-    local weld = Instance.new("Weld")
-    weld.Part0 = handle
-    weld.Part1 = seat
-    weld.C0 = CFrame.new(0, 1.5, 0)
-    weld.Parent = handle
-
-    local mesh = Instance.new("SpecialMesh", handle)
-    mesh.MeshType = Enum.MeshType.Brick
-    mesh.Scale = Vector3.new(1, 1, 1)
-
-    -- Encosto do sofa
-    local back = Instance.new("Part")
-    back.Size = Vector3.new(6, 2.5, 0.5)
-    back.BrickColor = BrickColor.new("Bright red")
-    back.Material = Enum.Material.Fabric
-    back.CanCollide = false
-    back.Parent = handle
-    local backWeld = Instance.new("Weld", back)
-    backWeld.Part0 = handle
-    backWeld.Part1 = back
-    backWeld.C0 = CFrame.new(0, 0.75, -1.25)
-
-    -- Bracos do sofa
-    for _, side in ipairs({-1, 1}) do
-        local arm = Instance.new("Part")
-        arm.Size = Vector3.new(0.5, 2, 3)
-        arm.BrickColor = BrickColor.new("Bright red")
-        arm.Material = Enum.Material.Fabric
-        arm.CanCollide = false
-        arm.Parent = handle
-        local armWeld = Instance.new("Weld", arm)
-        armWeld.Part0 = handle
-        armWeld.Part1 = arm
-        armWeld.C0 = CFrame.new(side * 2.75, 0.5, 0)
-    end
-
-    tool.RequiresHandle = true
-
-    local spinConnection = nil
-    local targetPlayer = nil
-    local oldCFrame = nil
-
-    tool.Equipped:Connect(function()
-        local mouse = LocalPlayer:GetMouse()
-
-        -- Quando clicar em alguem
-        mouse.Button1Down:Connect(function()
-            if sofaKillSpinning then return end
-
-            local target = mouse.Target
-            if not target then return end
-
-            local character = target:FindFirstAncestorOfClass("Model")
-            if not character then return end
-
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
-
-            local player = Players:GetPlayerFromCharacter(character)
-            if not player or player == LocalPlayer then return end
-
-            targetPlayer = player
-            sofaKillSpinning = true
-
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local targetHRP = character:FindFirstChild("HumanoidRootPart")
-
-            if not hrp or not targetHRP then
-                sofaKillSpinning = false
-                return
-            end
-
-            oldCFrame = hrp.CFrame
-
-            -- Faz o alvo sentar no sofa
-            seat:Sit(humanoid)
-
-            -- Gira em volta do alvo rapidamente
-            local spinSpeed = 20
-            local spinTime = 0
-            local radius = 8
-
-            spinConnection = RunService.Heartbeat:Connect(function()
-                if not sofaKillSpinning or not targetHRP or not targetHRP.Parent then
-                    if spinConnection then spinConnection:Disconnect() end
-                    sofaKillSpinning = false
-                    return
-                end
-
-                spinTime = spinTime + RunService.Heartbeat.Interval
-                local angle = spinTime * spinSpeed
-
-                -- Posiciona o sofa girando em volta do alvo
-                local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
-                hrp.CFrame = CFrame.new(targetHRP.Position + offset, targetHRP.Position)
-                hrp.Velocity = Vector3.new(0, 0, 0)
-
-                -- Se o alvo esta no sofa por 2 segundos, flinga
-                if spinTime > 2 and seat.Occupant then
-                    if spinConnection then spinConnection:Disconnect() end
-
-                    -- Fling MASSIVO para fora do mapa
-                    task.spawn(function()
-                        local flingTime = 0
-                        while flingTime < 1.5 and targetHRP and targetHRP.Parent do
-                            flingTime = flingTime + task.wait()
-                            hrp.CFrame = targetHRP.CFrame
-                            hrp.Velocity = Vector3.new(999999, 999999, 999999)
-                        end
-
-                        -- Reseta posicao
-                        hrp.Velocity = Vector3.new(0, 0, 0)
-                        hrp.CFrame = oldCFrame
-                        sofaKillSpinning = false
-
-                        -- Tenta matar o alvo
-                        if humanoid then
-                            humanoid.Health = 0
-                            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
-                        end
-                    end)
-                end
-            end)
-        end)
-    end)
-
-    tool.Unequipped:Connect(function()
-        if spinConnection then
-            spinConnection:Disconnect()
-            spinConnection = nil
-        end
-        sofaKillSpinning = false
-        if oldCFrame and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = oldCFrame
-        end
-    end)
-
-    sofaKillTool = tool
-    tool.Parent = LocalPlayer.Backpack
-    return tool
-end
-
---// ==================== KILL ALL ====================
-
-local function startKillAll()
-    if killAllActive then return end
-    killAllActive = true
-
-    Say(";kill all")
-
-    killAllConnection = RunService.Heartbeat:Connect(function()
-        if not killAllActive then 
-            if killAllConnection then killAllConnection:Disconnect() end
-            return 
-        end
-
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local targetHRP = player.Character:FindFirstChild("HumanoidRootPart")
-                local targetHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                if targetHRP and targetHumanoid then
-                    local char = LocalPlayer.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local oldCF = hrp.CFrame
-                        hrp.CFrame = targetHRP.CFrame
-                        hrp.Velocity = Vector3.new(500000, 500000, 500000)
-                        task.delay(0.1, function()
-                            if hrp then
-                                hrp.Velocity = Vector3.new(0, 0, 0)
-                                hrp.CFrame = oldCF
-                            end
-                        end)
-                        targetHumanoid.Health = 0
-                        targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
-                    end
-                end
-            end
-        end
-        task.wait(0.5)
-    end)
-end
-
-local function stopKillAll()
-    killAllActive = false
-    Say(";unloopkill all")
-    if killAllConnection then
-        killAllConnection:Disconnect()
-        killAllConnection = nil
+    -- Tenta encontrar na mochila e equipar
+    local sofa = backpack:FindFirstChild(sofaName)
+    if sofa then
+        sofa.Parent = character
+        return sofa
+    else
+        warn("AVISO: Você precisa ter o item '" .. sofaName .. "' no inventário do Brookhaven.")
+        return nil
     end
 end
+
+local function executeSofaKill(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+
+    local sofa = equipSofa()
+    if not sofa then 
+        warn("Sofá não encontrado! Compre o sofá no Brookhaven primeiro.")
+        return 
+    end
+
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+
+    if not hrp or not targetHRP or not targetHumanoid then return end
+
+    -- Salva posição atual
+    local safePosition = hrp.CFrame
+    local killPosition = Vector3.new(0, -500, 0)
+
+    -- Tenta sentar o alvo no sofá (se tiver seat)
+    local seat = sofa:FindFirstChildOfClass("Seat") or sofa:FindFirstChildOfClass("VehicleSeat")
+    if seat and targetHumanoid then
+        pcall(function() seat:Sit(targetHumanoid) end)
+    end
+
+    -- Teleporta para baixo do mapa com o alvo
+    hrp.CFrame = CFrame.new(killPosition)
+    targetHRP.CFrame = CFrame.new(killPosition + Vector3.new(0, 2, 0))
+
+    -- Aplica velocity para matar
+    targetHRP.Velocity = Vector3.new(0, -999999, 0)
+    targetHumanoid.Health = 0
+    targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
+
+    task.wait(0.5)
+
+    -- Volta com segurança
+    hrp.Velocity = Vector3.new(0, 0, 0)
+    hrp.CFrame = safePosition
+
+    warn("Sofa Kill executado em: " .. targetPlayer.Name)
+end
+
+local function startSofaKillAuto()
+    if sofaKillAutoActive then return end
+    sofaKillAutoActive = true
+
+    warn("Sofa Kill AUTO ativado! Clique em jogadores para matar automaticamente.")
+
+    sofaKillAutoConnection = Mouse.Button1Down:Connect(function()
+        if not sofaKillAutoActive then return end
+
+        local target = Mouse.Target
+        if not target then return end
+
+        local character = target:FindFirstAncestorOfClass("Model")
+        if not character then return end
+
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+
+        local player = Players:GetPlayerFromCharacter(character)
+        if not player or player == LocalPlayer then return end
+
+        executeSofaKill(player)
+    end)
+end
+
+local function stopSofaKillAuto()
+    sofaKillAutoActive = false
+    if sofaKillAutoConnection then
+        sofaKillAutoConnection:Disconnect()
+        sofaKillAutoConnection = nil
+    end
+    warn("Sofa Kill AUTO desativado.")
+end
+
+--// ==================== KILL ALL (REMOVIDO - SUBSTITUIDO POR KILL AUTO) ====================
+-- REMOVIDO: A função killAll foi removida conforme solicitado
+-- NOVO: ;kill auto faz a mesma coisa mas com o sofá do Brookhaven
 
 --// ==================== BRING COM CARRINHO ====================
 
@@ -575,7 +461,7 @@ local function executeBackrooms()
                     local light = Instance.new("PointLight", lightTube)
                     light.Brightness = 0.8
                     light.Range = 12
-                    light.Color= Color3.fromRGB(255, 248, 220)
+                    light.Color = Color3.fromRGB(255, 248, 220)
                     light.Shadows = true
 
                     task.spawn(function()
@@ -1149,27 +1035,36 @@ if ok and WindUILib then
         end
     })
 
+    -- CORREÇÃO: ;kill NÃO envia no chat, apenas pega o sofá e mata
     SectionActions:Button({
         Title = ";kill player",
-        Desc = "Sofa na mao! Clica na cabeca do alvo, gira e flinga para fora do mapa",
+        Desc = "Pega o sofá do Brookhaven, teleporta o alvo para baixo do mapa e volta com segurança (SEM enviar no chat)",
         Callback = function() 
-            createSofaKillTool()
-            warn("Sofa Killer equipado! Clique na cabeca do alvo para matar.")
+            local t = findTarget(TargetName)
+            if t then
+                executeSofaKill(t)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
         end
     })
 
+    -- NOVO: ;kill auto - Mesma função do ;kill mas ativado automaticamente ao clicar em jogadores
     SectionActions:Button({
-        Title = ";kill all",
-        Desc = "Mata todos os jogadores (server-side + fling)",
+        Title = ";kill auto",
+        Desc = "Ativa o modo automático: clique em qualquer jogador para matar instantaneamente (loop infinito)",
         Callback = function() 
-            startKillAll()
+            startSofaKillAuto()
         end
     })
 
+    -- CORREÇÃO: ;stop kill para o ;kill auto
     SectionActions:Button({
         Title = ";stop kill",
-        Desc = "Para o kill all",
-        Callback = function() stopKillAll() end
+        Desc = "Para o ;kill auto (modo automático de matar)",
+        Callback = function() 
+            stopSofaKillAuto()
+        end
     })
 
     SectionActions:Button({Title = ";tp player", Desc = "Teleporta para o jogador", Callback = function() local t = findTarget(TargetName) if t and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) end end})
@@ -1221,7 +1116,7 @@ if ok and WindUILib then
         Callback = function() 
             local t = findTarget(TargetName) 
             if t then 
-                bringPlayer(t)
+              bringPlayer(t)
             end 
         end
     })
@@ -1381,6 +1276,7 @@ if ok and WindUILib then
         end
     })
 
+    -- CORREÇÃO: Remover Todos os Efeitos agora também para o kill auto
     SectionSecurity:Button({
         Title = "Remover Todos os Efeitos",
         Desc = "Remove todos os efeitos ativos",
@@ -1393,7 +1289,7 @@ if ok and WindUILib then
             Lighting.Brightness = 2; Lighting.ExposureCompensation = 0; if Lighting:FindFirstChild("NV_Effect") then Lighting.NV_Effect:Destroy() end
             RunService:UnbindFromRenderStep("MotionBlur"); if Lighting:FindFirstChild("MB_Effect") then Lighting.MB_Effect:Destroy() end
             stopAura()
-            stopKillAll()
+            stopSofaKillAuto()  -- CORREÇÃO: Também para o kill auto
             warn("Todos os efeitos removidos.")
         end
     })
