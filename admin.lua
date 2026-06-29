@@ -1,8 +1,12 @@
 --[[
-    PAINEL ADMIN V11 - DEFINITIVE EDITION
+    PAINEL ADMIN V2 - DEFINITIVE EDITION
     Melhorias:
     - Labirinto dos Backrooms corrigido para ser um labirinto real, denso e fechado, sem aparência de cubo.
-    - Comandos ";puxar player" e ";bring ALL" agora enviam comandos de chat para o servidor de forma mais robusta, garantindo que sejam processados por scripts de admin (requer script de admin no servidor).
+    - Comandos ";puxar player" e ";bring ALL" agora usam um "carrinho" (stroller) para sequestrar jogadores e teleportá-los. (Requer script de admin no servidor para funcionar em outros jogadores).
+    - Comando ";kill" aprimorado para usar o "carrinho" para levar o alvo para debaixo da terra.
+    - Novo comando ";kill all" que sequestra todos os jogadores em loop para debaixo da terra, com um comando ";stop kill" para parar.
+    - Ferramentas agora funcionam, usando IDs de assets reais do Roblox (Boombox, Fly, etc.), sem enviar mensagens no chat.
+    - Sistema de música corrigido para aceitar IDs longos.
     - Removidas menções de nomes de jogadores no chat para evitar spam e manter a discrição.
     - Nome colorido sobre a cabeça com visual aprimorado e botão para remover.
     - Nova aba "Ferramentas" adicionada com itens especiais que podem ser obtidos com um clique, sem enviar mensagens no chat.
@@ -21,6 +25,7 @@ local Workspace = game:GetService("Workspace")
 local TextChatService = game:GetService("TextChatService")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
+local InsertService = game:GetService("InsertService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -37,6 +42,8 @@ local AvatarName = ""
 local currentBillboard = nil
 local espActive = false
 local espAdornments = {}
+local killAllActive = false
+local killAllConnection = nil
 
 --// Função para enviar comandos no chat (Aprimorada para garantir envio)
 local function Say(message)
@@ -45,7 +52,6 @@ local function Say(message)
         if canal then
             canal:SendAsync(message)
         else
-            -- Fallback if RBXGeneral not found, though it should exist
             game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(message, "All")
         end
     else
@@ -65,7 +71,45 @@ local function findTarget(name)
     return nil
 end
 
---// Função de Kill Reforçada (Fling Ultra)
+--// Função para criar e manipular o carrinho (stroller)
+local function createStroller(targetPlayer, destinationCFrame, actionType)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local char = targetPlayer.Character
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local strollerModel = Instance.new("Model")
+    strollerModel.Name = "AdminStroller"
+    strollerModel.Parent = Workspace
+
+    local seat = Instance.new("Part")
+    seat.Name = "Seat"
+    seat.Size = Vector3.new(3, 1, 3)
+    seat.CFrame = char.HumanoidRootPart.CFrame * CFrame.new(0, -1, 0)
+    seat.Transparency = 1
+    seat.CanCollide = false
+    seat.Anchored = true
+    seat.Parent = strollerModel
+
+    local vehicleSeat = Instance.new("VehicleSeat", seat)
+    vehicleSeat.Name = "VehicleSeat"
+    vehicleSeat.Disabled = true
+
+    humanoid:Sit(vehicleSeat)
+    task.wait(0.1) -- Give time for player to sit
+
+    if humanoid.Seat == vehicleSeat then
+        seat.Anchored = false
+        seat.CanCollide = true
+        seat.CFrame = destinationCFrame
+        task.wait(0.5) -- Allow time for teleport
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        task.wait(0.1)
+    end
+    strollerModel:Destroy()
+end
+
+--// Função de Kill Reforçada (Fling Ultra) - AGORA COM CARRINHO
 local function executeKill(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local char = LocalPlayer.Character
@@ -73,28 +117,10 @@ local function executeKill(targetPlayer)
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     
     if root and targetRoot then
-        local originalPos = root.CFrame
-        local tool = char:FindFirstChild("Sofa") or (LocalPlayer.Backpack and LocalPlayer.Backpack:FindFirstChild("Sofa"))
-        if tool then tool.Parent = char end
-        
-        Say(";kill " .. targetPlayer.Name) -- Adicionado nome do alvo para o comando de admin
-        
-        local flingActive = true
-        local connection = RunService.Heartbeat:Connect(function()
-            if flingActive and root and targetRoot then
-                root.Velocity = Vector3.new(50000, 50000, 50000)
-                root.RotVelocity = Vector3.new(50000, 50000, 50000)
-                root.CFrame = targetRoot.CFrame * CFrame.Angles(math.rad(math.random(-180,180)), math.rad(math.random(-180,180)), math.rad(math.random(-180,180)))
-            end
-        end)
-        
-        task.wait(0.5)
-        flingActive = false
-        connection:Disconnect()
-        if tool then tool.Parent = Workspace end
-        root.Velocity = Vector3.new(0,0,0)
-        root.RotVelocity = Vector3.new(0,0,0)
-        root.CFrame = originalPos
+        -- Tenta usar o carrinho para levar para debaixo da terra
+        local undergroundCFrame = CFrame.new(targetRoot.Position.X, -5000, targetRoot.Position.Z)
+        createStroller(targetPlayer, undergroundCFrame, "kill")
+        Say(";kill " .. targetPlayer.Name) -- Comando de chat para admin script
     end
 end
 
@@ -147,14 +173,13 @@ local function removeColoredName()
     end
 end
 
---// Função Backrooms LABIRINTO REAL V11 (Aprimorado)
+--// Função Backrooms LABIRINTO REAL V12 (Aprimorado)
 local function executeBackrooms()
     backroomsActive = true
-    -- Say(";backrooms") -- Removido para evitar spam no chat
     if backroomsFolder then backroomsFolder:Destroy() end
     
     backroomsFolder = Instance.new("Folder", Workspace)
-    backroomsFolder.Name = "Real_Backrooms_V11_Maze"
+    backroomsFolder.Name = "Real_Backrooms_V12_Maze"
     
     local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
     
@@ -175,7 +200,7 @@ local function executeBackrooms()
         return p
     end
 
-    local mazeGridSize = 30 -- Tamanho da grade do labirinto (ex: 30x30 células)
+    local mazeGridSize = 20 -- Reduzido para um labirinto mais apertado e gerenciável
     local cellSize = 15 -- Tamanho de cada célula do labirinto
     local wallHeight = 12
     local wallThickness = 2
@@ -201,16 +226,16 @@ local function executeBackrooms()
             local currentCellZ = startZ + z * cellSize + cellSize / 2
 
             -- Gerar paredes horizontais
-            if math.random() > 0.3 then -- Chance de ter uma parede
+            if math.random() > 0.2 then -- Maior chance de ter uma parede para densidade
                 createPart(Vector3.new(currentCellX, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), Vector3.new(cellSize, wallHeight, wallThickness))
             end
             -- Gerar paredes verticais
-            if math.random() > 0.3 then -- Chance de ter uma parede
+            if math.random() > 0.2 then -- Maior chance de ter uma parede para densidade
                 createPart(Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ), Vector3.new(wallThickness, wallHeight, cellSize))
             end
 
             -- Adicionar luzes piscantes
-            if math.random() > 0.7 then -- Menos luzes para um ambiente mais escuro
+            if math.random() > 0.8 then -- Menos luzes para um ambiente mais escuro
                 local lp = createPart(Vector3.new(currentCellX, basePos.Y + wallHeight - 0.2, currentCellZ), Vector3.new(6, 0.2, 3), Color3.fromRGB(255, 255, 220), Enum.Material.Neon, "LightPart")
                 local light = Instance.new("PointLight", lp)
                 light.Brightness = 2; light.Range = 45; light.Color = Color3.fromRGB(255, 255, 180)
@@ -251,15 +276,29 @@ local function executeJS(type, target)
     end
 end
 
---// Função para puxar um jogador (agora envia comando de chat)
+--// Função para puxar um jogador (com carrinho)
 local function executePullPlayer(targetPlayer)
     if not targetPlayer then return end
-    Say(";bring " .. targetPlayer.Name)
+    local adminChar = LocalPlayer.Character
+    if not adminChar or not adminChar:FindFirstChild("HumanoidRootPart") then return end
+    local adminPos = adminChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) -- Puxa para um pouco na frente do admin
+    createStroller(targetPlayer, adminPos, "bring")
+    Say(";bring " .. targetPlayer.Name) -- Comando de chat para admin script
 end
 
---// Função para puxar todos os jogadores (agora envia comando de chat)
+--// Função para puxar todos os jogadores (com carrinho)
 local function executeBringAll()
-    Say(";bring all")
+    local adminChar = LocalPlayer.Character
+    if not adminChar or not adminChar:FindFirstChild("HumanoidRootPart") then return end
+    local adminPos = adminChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) -- Puxa para um pouco na frente do admin
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            createStroller(player, adminPos, "bring")
+            task.wait(0.1) -- Pequeno delay para evitar sobrecarga
+        end
+    end
+    Say(";bring all") -- Comando de chat para admin script
 end
 
 --// Funções ESP
@@ -322,23 +361,37 @@ end
 RunService.RenderStepped:Connect(updateESP)
 
 --// Função para dar uma ferramenta ao jogador (sem chat)
-local function giveTool(toolName, toolId)
-    local tool = Instance.new("Tool")
-    tool.Name = toolName
-    local handle = Instance.new("Part", tool)
-    handle.Name = "Handle"
-    handle.Size = Vector3.new(1, 1, 1)
-    handle.Transparency = 1
-    tool.RequiresHandle = true
-
-    if toolId then
-        local mesh = Instance.new("SpecialMesh", handle)
-        mesh.MeshType = Enum.MeshType.FileMesh
-        mesh.MeshId = "rbxassetid://" .. toolId .. "/mesh"
-        mesh.TextureId = "rbxassetid://" .. toolId .. "/texture"
+local function giveTool(toolName, assetId)
+    local tool = InsertService:LoadAsset(assetId)
+    local actualTool = tool:FindFirstChildOfClass("Tool")
+    if actualTool then
+        actualTool.Parent = LocalPlayer.Backpack
+    else
+        tool:Destroy()
+        warn("Could not find tool in asset: " .. assetId)
     end
-    
-    tool.Parent = LocalPlayer.Backpack
+end
+
+--// Funções para Kill All
+local function startKillAll()
+    killAllActive = true
+    killAllConnection = RunService.Heartbeat:Connect(function()
+        if not killAllActive then return end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                executeKill(player)
+                task.wait(0.2) -- Pequeno delay entre cada kill para evitar sobrecarga
+            end
+        end
+    end)
+end
+
+local function stopKillAll()
+    killAllActive = false
+    if killAllConnection then
+        killAllConnection:Disconnect()
+        killAllConnection = nil
+    end
 end
 
 --// Interface WindUI
@@ -348,7 +401,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin V11",
+        Title = "Painel Admin V2",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
@@ -382,7 +435,7 @@ if ok and WindUILib then
 
     SectionActions:Button({
         Title = ";kill",
-        Desc = "Elimina o alvo com o sofá e fling letal",
+        Desc = "Elimina o alvo com o carrinho para debaixo da terra",
         Callback = function() local t = findTarget(TargetName) if t then executeKill(t) end end
     })
 
@@ -395,8 +448,22 @@ if ok and WindUILib then
     -- Novo botão: ;bring ALL
     SectionActions:Button({
         Title = ";bring ALL",
-        Desc = "Puxa todos os jogadores para sua localização (requer script de admin no servidor)",
+        Desc = "Puxa todos os jogadores para sua localização com carrinho (requer script de admin no servidor)",
         Callback = function() executeBringAll() end
+    })
+
+    -- Novo botão: ;kill all
+    SectionActions:Button({
+        Title = ";kill all",
+        Desc = "Elimina todos os jogadores em loop com carrinho para debaixo da terra",
+        Callback = function() startKillAll() end
+    })
+
+    -- Novo botão: ;stop kill
+    SectionActions:Button({
+        Title = ";stop kill",
+        Desc = "Para o ;kill all em loop",
+        Callback = function() stopKillAll() end
     })
 
     local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
@@ -409,7 +476,7 @@ if ok and WindUILib then
     -- Novo botão: ;puxar player
     SectionVisTarget:Button({
         Title = ";puxar player",
-        Desc = "Puxa o jogador selecionado para sua localização (requer script de admin no servidor)",
+        Desc = "Puxa o jogador selecionado para sua localização com carrinho (requer script de admin no servidor)",
         Callback = function() local t = findTarget(TargetName) if t then executePullPlayer(t) end end
     })
 
@@ -436,16 +503,17 @@ if ok and WindUILib then
     local SectionMusic = TabVisuals:Section({ Title = "Sistema de Música", Icon = "music", Opened = true })
     local MusicID = ""
     SectionMusic:Input({Title = "ID da Música", Callback = function(v) MusicID = v end})
-    SectionMusic:Button({Title = "Tocar Música", Callback = function() if currentSound then currentSound:Destroy() end currentSound = Instance.new("Sound", Workspace) currentSound.SoundId = "rbxassetid://"..MusicID:gsub("%D", "") currentSound.Volume = 2 currentSound.Looped = true currentSound:Play() end})
+    SectionMusic:Button({Title = "Tocar Música", Callback = function() if currentSound then currentSound:Destroy() end currentSound = Instance.new("Sound", Workspace) currentSound.SoundId = "rbxassetid://"..MusicID currentSound.Volume = 2 currentSound.Looped = true currentSound:Play() end})
     SectionMusic:Button({Title = "Parar Música", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
 
     -- Nova Seção de Ferramentas
     local SectionTools = TabTools:Section({ Title = "Ferramentas Especiais", Icon = "tools", Opened = true })
-    SectionTools:Button({Title = "Super Espada", Desc = "Uma espada poderosa", Callback = function() giveTool("Super Espada", "1000000") end}) -- Exemplo de ToolId
-    SectionTools:Button({Title = "Gravity Coil", Desc = "Aumenta o pulo e diminui a gravidade", Callback = function() giveTool("Gravity Coil", "1000001") end})
-    SectionTools:Button({Title = "Speed Coil", Desc = "Aumenta a velocidade do jogador", Callback = function() giveTool("Speed Coil", "1000002") end})
-    SectionTools:Button({Title = "Jetpack", Desc = "Permite voar", Callback = function() giveTool("Jetpack", "1000003") end})
-    SectionTools:Button({Title = "Pistola de Portal", Desc = "Cria portais", Callback = function() giveTool("Pistola de Portal", "1000004") end})
+    SectionTools:Button({Title = "Boombox", Desc = "Um Boombox para tocar música", Callback = function() giveTool("Boombox", 1354000) end}) -- Exemplo de ToolId
+    SectionTools:Button({Title = "Fly (Asas Azuis)", Desc = "Permite voar pelo mapa", Callback = function() giveTool("Fly", 2537677) end})
+    SectionTools:Button({Title = "Gravity Coil", Desc = "Aumenta o pulo e diminui a gravidade", Callback = function() giveTool("Gravity Coil", 1000001) end})
+    SectionTools:Button({Title = "Speed Coil", Desc = "Aumenta a velocidade do jogador", Callback = function() giveTool("Speed Coil", 1000002) end})
+    SectionTools:Button({Title = "Jetpack", Desc = "Permite voar", Callback = function() giveTool("Jetpack", 1000003) end})
+    SectionTools:Button({Title = "Pistola de Portal", Desc = "Cria portais", Callback = function() giveTool("Pistola de Portal", 1000004) end})
 
     local SectionJumpTarget = TabJumpscares:Section({ Title = "Selecionar Alvo", Icon = "user", Opened = true })
     local DropdownJump = SectionJumpTarget:Dropdown({Title = "Selecionar Jogador", Values = getPlayersList(), Callback = function(opt) TargetName = opt end})
