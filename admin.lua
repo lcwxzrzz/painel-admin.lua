@@ -1,5 +1,11 @@
 --[[
-    PAINEL ADMIN V8 - DEFINITIVE EDITION
+    PAINEL ADMIN V9 - DEFINITIVE EDITION
+    Melhorias:
+    - Labirinto dos Backrooms mais apertado e sem final visível.
+    - Botão ";puxar player" adicionado na aba "Efeitos Visuais".
+    - Toggle "ESP" adicionado na seção "Efeitos de Câmera" para ver todos os jogadores.
+    - Comando ";bring ALL" adicionado na aba "Comandos".
+    - Atualização automática da lista de jogadores já implementada e mantida.
     Correções:
     - ;kill movido para "Comandos" e sistema de fling reforçado
     - Nome colorido agora aparece sobre a cabeça (BillboardGui)
@@ -28,6 +34,8 @@ local backroomsActive = false
 local TargetName = ""
 local AvatarName = ""
 local currentBillboard = nil
+local espActive = false
+local espAdornments = {}
 
 --// Função para enviar comandos no chat
 local function Say(message)
@@ -116,14 +124,14 @@ local function createColoredName(text)
     end)
 end
 
---// Função Backrooms LABIRINTO REAL V5
+--// Função Backrooms LABIRINTO REAL V5 (Aprimorado)
 local function executeBackrooms()
     backroomsActive = true
     Say(";backrooms")
     if backroomsFolder then backroomsFolder:Destroy() end
     
     backroomsFolder = Instance.new("Folder", Workspace)
-    backroomsFolder.Name = "Real_Backrooms_V5_Maze"
+    backroomsFolder.Name = "Real_Backrooms_V9_Maze"
     
     local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
     
@@ -146,21 +154,25 @@ local function executeBackrooms()
 
     local boxSize = 1000
     local wallHeight = 12
+    local mazeDensity = 0.7 -- Aumenta a densidade das paredes para um labirinto mais apertado
     
-    createPart(basePos, Vector3.new(boxSize, 1, boxSize), Color3.fromRGB(130, 125, 110), Enum.Material.Concrete)
-    createPart(basePos + Vector3.new(0, wallHeight, 0), Vector3.new(boxSize, 1, boxSize), Color3.fromRGB(220, 220, 200), Enum.Material.Plaster)
+    -- Chão e Teto
+    createPart(basePos, Vector3.new(boxSize, 1, boxSize), Color3.fromRGB(130, 125, 110), Enum.Material.Concrete, "Floor")
+    createPart(basePos + Vector3.new(0, wallHeight, 0), Vector3.new(boxSize, 1, boxSize), Color3.fromRGB(220, 220, 200), Enum.Material.Plaster, "Ceiling")
     
-    for i = 1, 600 do
-        local x = math.floor(math.random(-450, 450) / 20) * 20
-        local z = math.floor(math.random(-450, 450) / 20) * 20
+    -- Geração de paredes mais densa
+    for i = 1, math.floor(600 * mazeDensity) do -- Mais paredes
+        local x = math.floor(math.random(-450, 450) / 10) * 10 -- Menor espaçamento para paredes mais próximas
+        local z = math.floor(math.random(-450, 450) / 10) * 10
         local isHorizontal = math.random() > 0.5
-        local wallSize = isHorizontal and Vector3.new(20, wallHeight, 2) or Vector3.new(2, wallHeight, 20)
-        if math.random() > 0.3 then createPart(basePos + Vector3.new(x, wallHeight/2, z), wallSize) end
+        local wallSize = isHorizontal and Vector3.new(math.random(10, 40), wallHeight, 2) or Vector3.new(2, wallHeight, math.random(10, 40)) -- Variedade no tamanho das paredes
+        createPart(basePos + Vector3.new(x, wallHeight/2, z), wallSize)
     end
 
+    -- Luzes piscantes
     for x = -450, 450, 40 do
         for z = -450, 450, 40 do
-            local lp = createPart(basePos + Vector3.new(x, wallHeight - 0.2, z), Vector3.new(6, 0.2, 3), Color3.fromRGB(255, 255, 220), Enum.Material.Neon)
+            local lp = createPart(basePos + Vector3.new(x, wallHeight - 0.2, z), Vector3.new(6, 0.2, 3), Color3.fromRGB(255, 255, 220), Enum.Material.Neon, "LightPart")
             local light = Instance.new("PointLight", lp)
             light.Brightness = 2; light.Range = 45; light.Color = Color3.fromRGB(255, 255, 180)
             task.spawn(function()
@@ -172,12 +184,13 @@ local function executeBackrooms()
         end
     end
 
+    -- Som ambiente
     local hum = Instance.new("Sound", backroomsFolder)
     hum.SoundId = "rbxassetid://9070440337"; hum.Looped = true; hum.Volume = 0.4; hum:Play()
     LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(basePos + Vector3.new(0, 5, 0))
 end
 
---// Jumpscares
+--// Função Jumpscares
 local function executeJS(type, target)
     if not target or not target.Character then return end
     if type == 1 then
@@ -198,6 +211,90 @@ local function executeJS(type, target)
     end
 end
 
+--// Função para puxar um jogador (novo)
+local function executePullPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local adminPos = char.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) -- Puxa para um pouco na frente do admin
+        targetPlayer.Character.HumanoidRootPart.CFrame = adminPos
+        Say(";puxar player " .. targetPlayer.Name) -- Comando de chat para feedback
+    end
+end
+
+--// Função para puxar todos os jogadores (novo)
+local function executeBringAll()
+    local adminChar = LocalPlayer.Character
+    if not adminChar or not adminChar:FindFirstChild("HumanoidRootPart") then return end
+    local adminPos = adminChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) -- Puxa para um pouco na frente do admin
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = adminPos
+        end
+    end
+    Say(";bring ALL") -- Comando de chat para feedback
+end
+
+--// Funções ESP (novo)
+local function createESPAdornment(player)
+    if not player.Character then return end
+    local char = player.Character
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+
+    local adornment = Instance.new("BoxHandleAdornment")
+    adornment.Adornee = head
+    adornment.AlwaysOnTop = true
+    adornment.ZIndex = 7
+    adornment.Color3 = Color3.fromRGB(0, 255, 0) -- Verde
+    adornment.Transparency = 0.7
+    adornment.Size = Vector3.new(3, 3, 3) -- Tamanho do cubo
+    adornment.Parent = Workspace.CurrentCamera -- Para ser visível através de paredes
+    espAdornments[player.UserId] = adornment
+end
+
+local function removeESPAdornment(player)
+    if espAdornments[player.UserId] then
+        espAdornments[player.UserId]:Destroy()
+        espAdornments[player.UserId] = nil
+    end
+end
+
+local function updateESP()
+    if espActive then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                if not espAdornments[player.UserId] then
+                    createESPAdornment(player)
+                else
+                    -- Atualiza a posição do adornment se o personagem se mover
+                    espAdornments[player.UserId].Adornee = player.Character:FindFirstChild("Head")
+                end
+            else
+                removeESPAdornment(player)
+            end
+        end
+        -- Remove adornments de jogadores que saíram
+        for userId, adornment in pairs(espAdornments) do
+            local player = Players:GetPlayerByUserId(userId)
+            if not player or player == LocalPlayer or not player.Character or not player.Character:FindFirstChild("Head") then
+                adornment:Destroy()
+                espAdornments[userId] = nil
+            end
+        end
+    else
+        -- Desativa todos os adornments se o ESP for desativado
+        for userId, adornment in pairs(espAdornments) do
+            adornment:Destroy()
+            espAdornments[userId] = nil
+        end
+    end
+end
+
+-- Conecta a atualização do ESP a um loop de renderização
+RunService.RenderStepped:Connect(updateESP)
+
 --// Interface WindUI
 local ok, WindUILib = pcall(function()
     return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -205,7 +302,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin V8",
+        Title = "Painel Admin V9",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
@@ -247,12 +344,26 @@ if ok and WindUILib then
     SectionActions:Button({Title = ";unbang", Desc = "Para a animação bang", Callback = function() Say(";unbang") if bangLoop then bangLoop:Disconnect() bangLoop = nil end end})
     SectionActions:Button({Title = ";view", Desc = "Observa a câmera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view") viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
     SectionActions:Button({Title = ";unview", Desc = "Retorna a câmera para você", Callback = function() Say(";unview") if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
+    
+    -- Novo botão: ;bring ALL
+    SectionActions:Button({
+        Title = ";bring ALL",
+        Desc = "Puxa todos os jogadores para sua localização",
+        Callback = function() executeBringAll() end
+    })
 
     local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
     local DropdownVis = SectionVisTarget:Dropdown({
         Title = "Selecionar Jogador",
         Values = getPlayersList(),
         Callback = function(opt) TargetName = opt end
+    })
+    
+    -- Novo botão: ;puxar player
+    SectionVisTarget:Button({
+        Title = ";puxar player",
+        Desc = "Puxa o jogador selecionado para sua localização",
+        Callback = function() local t = findTarget(TargetName) if t then executePullPlayer(t) end end
     })
 
     local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
@@ -262,6 +373,17 @@ if ok and WindUILib then
     local SectionFX = TabVisuals:Section({ Title = "Efeitos de Câmera", Icon = "camera", Opened = true })
     SectionFX:Toggle({Title = "Visão Noturna", Callback = function(v) Lighting.Brightness = v and 3 or 2; Lighting.ExposureCompensation = v and 3 or 0; if v then local cc = Instance.new("ColorCorrectionEffect", Lighting) cc.Name = "NV_Effect" cc.TintColor = Color3.fromRGB(100, 255, 100) else if Lighting:FindFirstChild("NV_Effect") then Lighting.NV_Effect:Destroy() end end end})
     SectionFX:Toggle({Title = "Motion Blur", Callback = function(v) if v then local blur = Instance.new("BlurEffect", Lighting) blur.Name = "MB_Effect"; RunService:BindToRenderStep("MotionBlur", 200, function() if LocalPlayer.Character then blur.Size = math.clamp(LocalPlayer.Character.HumanoidRootPart.Velocity.Magnitude / 5, 0, 15) end end) else RunService:UnbindFromRenderStep("MotionBlur") if Lighting:FindFirstChild("MB_Effect") then Lighting.MB_Effect:Destroy() end end end})
+    
+    -- Novo Toggle: ESP
+    SectionFX:Toggle({
+        Title = "ESP (Ver Jogadores)",
+        Desc = "Mostra todos os jogadores através das paredes",
+        Callback = function(v)
+            espActive = v
+            updateESP()
+        end
+    })
+
     SectionFX:Button({Title = "Screen Shake", Desc = "Efeito de impacto", Callback = function() local s = tick() local c; c = RunService.RenderStepped:Connect(function() if tick()-s > 1 then c:Disconnect() return end Camera.CFrame = Camera.CFrame * CFrame.Angles(math.rad(math.random(-1,1)), math.rad(math.random(-1,1)), 0) end) end})
 
     local SectionMusic = TabVisuals:Section({ Title = "Sistema de Música", Icon = "music", Opened = true })
@@ -277,12 +399,26 @@ if ok and WindUILib then
     SectionJumpFX:Button({Title = "Jumpscare #2", Desc = "Tela Vermelha + Horror", Callback = function() executeJS(2, findTarget(TargetName)) end})
     SectionJumpFX:Button({Title = "Jumpscare #3", Desc = "Inversão + Som Estourado", Callback = function() executeJS(3, findTarget(TargetName)) end})
 
-    local SectionAvatar = TabJumpscares:Section({ Title = "Avatars Customizados", Icon = "user-plus", Opened = true })
+    local SectionAvatar = TabJumpscares:Section({ Title = "Avatar", Icon = "user-circle", Opened = true })
     SectionAvatar:Input({Title = "Nome do Avatar", Placeholder = "Digite o nome...", Callback = function(val) AvatarName = val end})
     SectionAvatar:Button({Title = "Colorir Nome", Desc = "Coloca o nome colorido sobre sua cabeça", Callback = function() if AvatarName ~= "" then createColoredName(AvatarName) end end})
 
-    Players.PlayerAdded:Connect(function() local l = getPlayersList(); DropdownMain:SetValues(l); DropdownVis:SetValues(l); DropdownJump:SetValues(l) end)
-    Players.PlayerRemoving:Connect(function() local l = getPlayersList(); DropdownMain:SetValues(l); DropdownVis:SetValues(l); DropdownJump:SetValues(l) end)
+    -- Atualização da lista de jogadores ao entrar/sair
+    Players.PlayerAdded:Connect(function()
+        local l = getPlayersList()
+        DropdownMain:SetValues(l)
+        DropdownVis:SetValues(l)
+        DropdownJump:SetValues(l)
+        updateESP() -- Atualiza ESP para novos jogadores
+    end)
+    Players.PlayerRemoving:Connect(function()
+        local l = getPlayersList()
+        DropdownMain:SetValues(l)
+        DropdownVis:SetValues(l)
+        DropdownJump:SetValues(l)
+        removeESPAdornment(Players:GetPlayerByUserId(TargetName)) -- Remove adornment se o alvo sair
+        updateESP() -- Atualiza ESP para jogadores que saíram
+    end)
 end
 
 local sound = Instance.new("Sound")
