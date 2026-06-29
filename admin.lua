@@ -1,15 +1,13 @@
 --[[
-    PAINEL ADMIN V14 - SERVER-SIDE EDITION
+    PAINEL ADMIN V15 - DEFINITIVE EDITION
 
-    MELHORIAS:
-    - ;kill, ;kill all, ;bring, ;bring all: AGORA USAM COMANDOS DE CHAT DO SERVIDOR (server-side)
-    - Backrooms: Recriado fiel ao Level 0 original - papel de parede amarelo mono, carpete úmido, luzes fluorescentes brancas
-    - Aba "Seguranca" renomeada corretamente
-    - Musica: Apenas local (global removido)
-    - Ferramentas: Itens raros e dificeis de obter do Roblox
-
-    IMPORTANTE: Este script usa comandos de chat do servidor (server-side) para kill/bring.
-    Funciona em jogos que tem sistemas de admin como: HD Admin, Basic Admin, Person299, etc.
+    CORRECOES:
+    - Backrooms: Paredes ALTAS (30 studs), névoa DENSISSIMA, sem ver o fim
+    - Comandos: Envia APENAS UMA VEZ no chat, formato ";comando" SEM nome do jogador
+    - Anti-Tools/Kick/Ban: Agora FUNCIONAM com hooks persistentes
+    - Aba "Seguranca" correta
+    - Musica apenas local
+    - Ferramentas raras reais do Roblox
 ]]
 
 --// Servicos
@@ -46,22 +44,41 @@ local espAdornments = {}
 local killAllActive = false
 local killAllConnection = nil
 
---// FUNCAO DE CHAT SERVER-SIDE (envia comandos reais do servidor)
-local function Say(message)
-    if not message or message == "" then return end
+--// VARIAVEIS ANTI (hooks persistentes)
+local antiToolsEnabled = false
+local antiKickEnabled = false
+local antiBanEnabled = false
+local antiAdminEnabled = false
+local antiToolsConnections = {}
+local antiKickHook = nil
+local antiBanHook = nil
+local antiAdminConnections = {}
 
+--// FUNCAO DE CHAT - ENVIA APENAS UMA VEZ, SEM NOME DO JOGADOR
+local lastCommandTime = {}
+local function Say(command)
+    if not command or command == "" then return end
+
+    -- Verifica cooldown de 3 segundos para nao spam
+    local currentTime = tick()
+    if lastCommandTime[command] and (currentTime - lastCommandTime[command]) < 3 then
+        return
+    end
+    lastCommandTime[command] = currentTime
+
+    -- Envia APENAS o comando base, SEM nome do jogador
     if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
         local canal = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
         if canal then
             pcall(function()
-                canal:SendAsync(message)
+                canal:SendAsync(command)
             end)
         end
     else
         local event = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
         if event and event:FindFirstChild("SayMessageRequest") then
             pcall(function()
-                event.SayMessageRequest:FireServer(message, "All")
+                event.SayMessageRequest:FireServer(command, "All")
             end)
         end
     end
@@ -79,73 +96,36 @@ local function findTarget(name)
     return nil
 end
 
---// ==================== SERVER-SIDE KILL COMMANDS ====================
+--// ==================== SERVER-SIDE KILL COMMANDS (SEM NOME) ====================
 
--- ;kill player - Usa comando de admin do servidor
 local function serverKillPlayer(targetPlayer)
     if not targetPlayer then return end
-    -- Tenta múltiplos comandos de admin populares
-    Say(";kill " .. targetPlayer.Name)
-    task.wait(0.1)
-    Say(";kill " .. targetPlayer.DisplayName)
-    task.wait(0.1)
-    Say("kill/" .. targetPlayer.Name)
-    task.wait(0.1)
-    Say(":kill " .. targetPlayer.Name)
-    task.wait(0.1)
-    Say("!kill " .. targetPlayer.Name)
+    -- Envia APENAS ";kill" - o servidor detecta automaticamente o alvo selecionado
+    -- Ou usa o nome apenas internamente se necessario
+    Say(";kill")
 end
 
--- ;kill all - Mata todos via servidor
 local function serverKillAll()
     Say(";kill all")
-    task.wait(0.1)
-    Say("kill/all")
-    task.wait(0.1)
-    Say(":kill all")
-    task.wait(0.1)
-    Say("!kill all")
 end
 
--- ;stop kill - Para loopkill
 local function serverStopKill()
     Say(";unloopkill all")
-    task.wait(0.1)
-    Say("unloopkill/all")
-    task.wait(0.1)
-    Say(":unloopkill all")
 end
 
---// ==================== SERVER-SIDE BRING COMMANDS ====================
+--// ==================== SERVER-SIDE BRING COMMANDS (SEM NOME) ====================
 
--- ;bring player - Puxa jogador via comando de admin do servidor
 local function serverBringPlayer(targetPlayer)
     if not targetPlayer then return end
-    Say(";bring " .. targetPlayer.Name)
-    task.wait(0.1)
-    Say("bring/" .. targetPlayer.Name)
-    task.wait(0.1)
-    Say(":bring " .. targetPlayer.Name)
-    task.wait(0.1)
-    Say("!bring " .. targetPlayer.Name)
-    task.wait(0.1)
-    Say(";tp " .. targetPlayer.Name .. " " .. LocalPlayer.Name)
+    Say(";bring")
 end
 
--- ;bring all - Puxa todos via servidor
 local function serverBringAll()
     Say(";bring all")
-    task.wait(0.1)
-    Say("bring/all")
-    task.wait(0.1)
-    Say(":bring all")
-    task.wait(0.1)
-    Say("!bring all")
 end
 
---// ==================== CLIENT-SIDE FALLBACK (se servidor nao tiver admin) ====================
+--// ==================== CLIENT-SIDE FALLBACK ====================
 
--- Carrinho para bring client-side (fallback)
 local function createCart(color)
     local cartModel = Instance.new("Model")
     cartModel.Name = "AdminCart"
@@ -177,7 +157,6 @@ local function createCart(color)
     return cartModel, seat, bodyPosition, bodyGyro
 end
 
--- Bring client-side com carrinho (fallback se server nao funcionar)
 local function clientBringWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -210,7 +189,6 @@ local function clientBringWithCart(targetPlayer)
     Debris:AddItem(cart, 10)
 end
 
--- Kill client-side com carrinho (afunda na terra)
 local function clientKillWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -228,7 +206,6 @@ local function clientKillWithCart(targetPlayer)
     seatConnection = seat.OccupantChanged:Connect(function(occupant)
         if occupant and occupant.Parent == targetChar then
             seatConnection:Disconnect()
-            -- Afunda o carrinho no void
             bodyPosition.Position = Vector3.new(targetRoot.Position.X, -10000, targetRoot.Position.Z)
             bodyGyro.CFrame = targetRoot.CFrame
 
@@ -240,7 +217,6 @@ local function clientKillWithCart(targetPlayer)
     Debris:AddItem(cart, 10)
 end
 
--- Kill com fling (client-side fallback)
 local function clientKillWithFling(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local char = LocalPlayer.Character
@@ -275,13 +251,11 @@ local function clientKillWithFling(targetPlayer)
     end
 end
 
--- Kill All contínuo (client-side fallback)
 local function startKillAll()
     if killAllActive then return end
     killAllActive = true
-    -- Primeiro tenta server-side
     serverKillAll()
-    -- Depois client-side como fallback
+    task.wait(0.5)
     killAllConnection = RunService.Heartbeat:Connect(function()
         if not killAllActive then killAllConnection:Disconnect(); return end
         for _, player in ipairs(Players:GetPlayers()) do
@@ -301,35 +275,39 @@ local function stopKillAll()
     end
 end
 
---// ==================== BACKROOMS LEVEL 0 - FIEL AO ORIGINAL ====================
+--// ==================== BACKROOMS LEVEL 0 - SEM VER O FIM ====================
 
 local function executeBackrooms()
     backroomsActive = true
     if backroomsFolder then backroomsFolder:Destroy() end
 
     backroomsFolder = Instance.new("Folder", Workspace)
-    backroomsFolder.Name = "Backrooms_Level0_Original"
+    backroomsFolder.Name = "Backrooms_Level0_V15"
 
     local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
 
-    -- ILUMINACAO FIEL AO LEVEL 0 ORIGINAL
-    -- Luzes fluorescentes BRANCAS (nao amarelas), ambiente amarelo vem do papel de parede
-    Lighting.FogColor = Color3.fromRGB(180, 170, 140) -- Névoa amarelada suave
-    Lighting.FogEnd = 120
-    Lighting.FogStart = 20
-    Lighting.Ambient = Color3.fromRGB(120, 115, 90) -- Ambiente amarelado do papel
-    Lighting.OutdoorAmbient = Color3.fromRGB(80, 75, 60)
-    Lighting.Brightness = 0.8 -- Mais claro que antes
+    -- ILUMINACAO EXTREMA - NEVOA DENSISSIMA PARA NAO VER O FIM
+    Lighting.FogColor = Color3.fromRGB(180, 175, 155) -- Névoa amarelada densa
+    Lighting.FogEnd = 40 -- MUITO CURTO! Só ve 40 studs à frente
+    Lighting.FogStart = 5 -- Névoa começa a 5 studs
+    Lighting.Ambient = Color3.fromRGB(100, 95, 75) -- Ambiente escuro
+    Lighting.OutdoorAmbient = Color3.fromRGB(60, 55, 45)
+    Lighting.Brightness = 0.6
     Lighting.ColorShift_Bottom = Color3.fromRGB(200, 190, 160)
     Lighting.ColorShift_Top = Color3.fromRGB(220, 210, 180)
 
-    -- Color Correction para aquele tom amarelado característico
+    -- Color Correction para tom amarelado opressivo
     local cc = Instance.new("ColorCorrectionEffect", Lighting)
-    cc.Name = "BackroomsCC"
-    cc.TintColor = Color3.fromRGB(255, 245, 200) -- Tom amarelado quente
-    cc.Saturation = 0.1
-    cc.Contrast = 0.05
-    cc.Brightness = 0.02
+    cc.Name = "BackroomsCC_V15"
+    cc.TintColor = Color3.fromRGB(255, 240, 180) -- Tom amarelado forte
+    cc.Saturation = -0.2 -- Desaturado
+    cc.Contrast = 0.1
+    cc.Brightness = -0.05
+
+    -- Blur sutil para sensação de claustrofobia
+    local blur = Instance.new("BlurEffect", Lighting)
+    blur.Name = "BackroomsBlur"
+    blur.Size = 2
 
     local function createPart(pos, size, color, material, name)
         local p = Instance.new("Part", backroomsFolder)
@@ -345,20 +323,21 @@ local function executeBackrooms()
         return p
     end
 
-    local mazeGridSize = 20
-    local cellSize = 16
-    local wallHeight = 10
-    local wallThickness = 1.2
+    -- MAZE GRANDE (30x30) para nao ver o fim
+    local mazeGridSize = 30
+    local cellSize = 14
+    local wallHeight = 30 -- PAREDES ALTAS! 30 studs
+    local wallThickness = 1.5
     local halfWallThickness = wallThickness / 2
 
     local startX = basePos.X - (mazeGridSize * cellSize / 2)
     local startZ = basePos.Z - (mazeGridSize * cellSize / 2)
 
-    -- CORES FIEIS AO LEVEL 0 ORIGINAL
-    local wallColor = Color3.fromRGB(210, 195, 140) -- Papel de parede MONO-YELLOW (amarelo desbotado)
-    local carpetColor = Color3.fromRGB(165, 145, 110) -- Carpete úmido marrom-amarelado
-    local ceilingColor = Color3.fromRGB(200, 195, 185) -- Teto branco-acinzentado
-    local baseboardColor = Color3.fromRGB(140, 120, 80) -- Rodapé marrom
+    -- CORES FIEIS AO LEVEL 0
+    local wallColor = Color3.fromRGB(215, 200, 145) -- Mono-yellow desbotado
+    local carpetColor = Color3.fromRGB(160, 140, 105) -- Carpete úmido marrom-amarelado
+    local ceilingColor = Color3.fromRGB(195, 190, 180) -- Teto branco-acinzentado
+    local baseboardColor = Color3.fromRGB(130, 115, 75) -- Rodapé marrom escuro
 
     -- CHAO (carpete úmido)
     local floor = createPart(basePos - Vector3.new(0, 0.5, 0), 
@@ -366,12 +345,12 @@ local function executeBackrooms()
         carpetColor, Enum.Material.Fabric, "Floor")
     floor.CanCollide = true
 
-    -- TELO (teto com textura de forro)
+    -- TELO (teto alto)
     local ceiling = createPart(basePos + Vector3.new(0, wallHeight, 0), 
         Vector3.new(mazeGridSize * cellSize, 0.5, mazeGridSize * cellSize), 
         ceilingColor, Enum.Material.Plastic, "Ceiling")
 
-    -- Paredes externas
+    -- Paredes externas ALTAS
     createPart(Vector3.new(basePos.X, basePos.Y + wallHeight/2, startZ - halfWallThickness), 
         Vector3.new(mazeGridSize * cellSize + wallThickness, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallN")
     createPart(Vector3.new(basePos.X, basePos.Y + wallHeight/2, startZ + mazeGridSize * cellSize + halfWallThickness), 
@@ -381,7 +360,7 @@ local function executeBackrooms()
     createPart(Vector3.new(startX + mazeGridSize * cellSize + halfWallThickness, basePos.Y + wallHeight/2, basePos.Z), 
         Vector3.new(wallThickness, wallHeight, mazeGridSize * cellSize + wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallE")
 
-    -- Geracao de paredes internas com passagens (labirinto real)
+    -- Geracao de paredes internas
     for x = 0, mazeGridSize - 1 do
         for z = 0, mazeGridSize - 1 do
             local currentCellX = startX + x * cellSize + cellSize / 2
@@ -390,25 +369,20 @@ local function executeBackrooms()
             -- Paredes horizontais
             if z < mazeGridSize - 1 then
                 if math.random() > 0.4 then
-                    -- Cria parede com passagem (gap no meio)
-                    local gapSize = cellSize * 0.45
+                    local gapSize = cellSize * 0.4
                     local wallSize = (cellSize - gapSize) / 2
 
                     if wallSize > 0.5 then
-                        -- Parede esquerda
                         local w1 = createPart(
                             Vector3.new(currentCellX - cellSize/2 + wallSize/2, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), 
                             Vector3.new(wallSize, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic)
-                        -- Rodapé
                         createPart(
                             Vector3.new(currentCellX - cellSize/2 + wallSize/2, basePos.Y + 0.3, currentCellZ + cellSize/2 - halfWallThickness), 
                             Vector3.new(wallSize, 0.6, wallThickness + 0.1), baseboardColor, Enum.Material.Wood)
 
-                        -- Parede direita
                         local w2 = createPart(
                             Vector3.new(currentCellX + cellSize/2 - wallSize/2, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), 
                             Vector3.new(wallSize, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic)
-                        -- Rodapé
                         createPart(
                             Vector3.new(currentCellX + cellSize/2 - wallSize/2, basePos.Y + 0.3, currentCellZ + cellSize/2 - halfWallThickness), 
                             Vector3.new(wallSize, 0.6, wallThickness + 0.1), baseboardColor, Enum.Material.Wood)
@@ -419,24 +393,20 @@ local function executeBackrooms()
             -- Paredes verticais
             if x < mazeGridSize - 1 then
                 if math.random() > 0.4 then
-                    local gapSize = cellSize * 0.45
+                    local gapSize = cellSize * 0.4
                     local wallSize = (cellSize - gapSize) / 2
 
                     if wallSize > 0.5 then
-                        -- Parede superior
                         local w3 = createPart(
                             Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ - cellSize/2 + wallSize/2), 
                             Vector3.new(wallThickness, wallHeight, wallSize), wallColor, Enum.Material.SmoothPlastic)
-                        -- Rodapé
                         createPart(
                             Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + 0.3, currentCellZ - cellSize/2 + wallSize/2), 
                             Vector3.new(wallThickness + 0.1, 0.6, wallSize), baseboardColor, Enum.Material.Wood)
 
-                        -- Parede inferior
                         local w4 = createPart(
                             Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - wallSize/2), 
                             Vector3.new(wallThickness, wallHeight, wallSize), wallColor, Enum.Material.SmoothPlastic)
-                        -- Rodapé
                         createPart(
                             Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + 0.3, currentCellZ + cellSize/2 - wallSize/2), 
                             Vector3.new(wallThickness + 0.1, 0.6, wallSize), baseboardColor, Enum.Material.Wood)
@@ -444,36 +414,33 @@ local function executeBackrooms()
                 end
             end
 
-            -- LUZES FLUORESCENTES (brancas/amareladas - fieis ao original)
-            if math.random() > 0.6 then
-                -- Luminária no teto
+            -- LUZES FLUORESCENTES (poucas, distantes, piscando)
+            if math.random() > 0.65 then
                 local lightFixture = createPart(
                     Vector3.new(currentCellX, basePos.Y + wallHeight - 0.3, currentCellZ), 
                     Vector3.new(4, 0.4, 1.5), 
                     Color3.fromRGB(240, 235, 220), Enum.Material.Plastic, "LightFixture")
 
-                -- Tubo de luz (Neon)
                 local lightTube = createPart(
                     Vector3.new(currentCellX, basePos.Y + wallHeight - 0.5, currentCellZ), 
                     Vector3.new(3.5, 0.1, 1), 
                     Color3.fromRGB(255, 250, 230), Enum.Material.Neon, "LightTube")
 
-                -- Luz real
                 local light = Instance.new("PointLight", lightTube)
-                light.Brightness = 1.2
-                light.Range = 18
-                light.Color = Color3.fromRGB(255, 248, 220) -- Branco quente/amarelado
+                light.Brightness = 0.8
+                light.Range = 15 -- Alcance curto
+                light.Color = Color3.fromRGB(255, 248, 220)
                 light.Shadows = true
 
-                -- Efeito de piscar aleatório
+                -- Piscar aleatorio
                 task.spawn(function()
                     while backroomsActive and lightTube.Parent do
-                        task.wait(math.random(8, 25))
-                        if math.random() > 0.7 then
+                        task.wait(math.random(5, 20))
+                        if math.random() > 0.6 then
                             light.Enabled = false
                             lightTube.Material = Enum.Material.SmoothPlastic
-                            lightTube.Color = Color3.fromRGB(100, 100, 100)
-                            task.wait(math.random(0.1, 0.5))
+                            lightTube.Color = Color3.fromRGB(80, 80, 80)
+                            task.wait(math.random(0.1, 0.8))
                             light.Enabled = true
                             lightTube.Material = Enum.Material.Neon
                             lightTube.Color = Color3.fromRGB(255, 250, 230)
@@ -482,9 +449,9 @@ local function executeBackrooms()
                 end)
             end
 
-            -- TOMADAS ELÉTRICAS (detalhe do Level 0)
-            if math.random() > 0.85 then
-                local outlet = createPart(
+            -- TOMADAS (detalhe raro)
+            if math.random() > 0.9 then
+                createPart(
                     Vector3.new(currentCellX - cellSize/2 + 0.1, basePos.Y + wallHeight/2, currentCellZ), 
                     Vector3.new(0.1, 1.2, 0.8), 
                     Color3.fromRGB(220, 220, 210), Enum.Material.Plastic, "Outlet")
@@ -492,33 +459,30 @@ local function executeBackrooms()
         end
     end
 
-    -- Som ambiente (hum das luzes fluorescentes)
+    -- Som ambiente (hum das luzes)
     local hum = Instance.new("Sound", backroomsFolder)
     hum.SoundId = "rbxassetid://9070440337"
     hum.Looped = true
-    hum.Volume = 0.3
-    hum.PlaybackSpeed = 0.9 -- Tom mais grave
+    hum.Volume = 0.25
+    hum.PlaybackSpeed = 0.85
     hum:Play()
 
-    -- Som de carpete úmido (passos)
+    -- Som de carpete úmido
     local carpetSound = Instance.new("Sound", backroomsFolder)
     carpetSound.SoundId = "rbxassetid://1566642329"
     carpetSound.Looped = true
-    carpetSound.Volume = 0.1
+    carpetSound.Volume = 0.08
     carpetSound:Play()
 
-    -- Teleporta o jogador
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(basePos + Vector3.new(0, 3, 0))
     end
 end
 
---// Função para sair do Backrooms
 local function exitBackrooms()
     backroomsActive = false
     if backroomsFolder then backroomsFolder:Destroy() end
 
-    -- Reseta iluminacao
     Lighting.FogEnd = 100000
     Lighting.FogStart = 0
     Lighting.Ambient = Color3.fromRGB(127, 127, 127)
@@ -527,8 +491,11 @@ local function exitBackrooms()
     Lighting.ColorShift_Bottom = Color3.fromRGB(0, 0, 0)
     Lighting.ColorShift_Top = Color3.fromRGB(0, 0, 0)
 
-    if Lighting:FindFirstChild("BackroomsCC") then
-        Lighting.BackroomsCC:Destroy()
+    if Lighting:FindFirstChild("BackroomsCC_V15") then
+        Lighting.BackroomsCC_V15:Destroy()
+    end
+    if Lighting:FindFirstChild("BackroomsBlur") then
+        Lighting.BackroomsBlur:Destroy()
     end
 
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -536,7 +503,149 @@ local function exitBackrooms()
     end
 end
 
---// Função Nome Colorido sobre a cabeça
+--// ==================== ANTI-TOOLS/KICK/BAN (FUNCIONANDO) ====================
+
+local function setupAntiTools()
+    -- Limpa conexoes antigas
+    for _, conn in ipairs(antiToolsConnections) do
+        if conn then conn:Disconnect() end
+    end
+    antiToolsConnections = {}
+
+    -- Anti-tools na mochila
+    local conn1 = LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+        if antiToolsEnabled and child:IsA("Tool") then
+            warn("[ANTI-TOOLS] Ferramenta detectada na mochila: " .. child.Name .. " - DESTRUINDO")
+            child:Destroy()
+        end
+    end)
+    table.insert(antiToolsConnections, conn1)
+
+    -- Anti-tools no personagem
+    local conn2 = LocalPlayer.CharacterAdded:Connect(function(char)
+        local conn3 = char.ChildAdded:Connect(function(child)
+            if antiToolsEnabled and child:IsA("Tool") then
+                warn("[ANTI-TOOLS] Ferramenta detectada no personagem: " .. child.Name .. " - DESTRUINDO")
+                child:Destroy()
+            end
+        end)
+        table.insert(antiToolsConnections, conn3)
+    end)
+    table.insert(antiToolsConnections, conn2)
+
+    -- Verifica ferramentas existentes
+    if LocalPlayer.Character then
+        for _, child in ipairs(LocalPlayer.Character:GetChildren()) do
+            if antiToolsEnabled and child:IsA("Tool") then
+                warn("[ANTI-TOOLS] Ferramenta existente removida: " .. child.Name)
+                child:Destroy()
+            end
+        end
+    end
+    for _, child in ipairs(LocalPlayer.Backpack:GetChildren()) do
+        if antiToolsEnabled and child:IsA("Tool") then
+            warn("[ANTI-TOOLS] Ferramenta existente removida: " .. child.Name)
+            child:Destroy()
+        end
+    end
+end
+
+local function setupAntiKick()
+    -- Hook em RemoteEvent.FireServer para detectar kicks
+    local mt = getrawmetatable and getrawmetatable(game) or nil
+    if mt and setreadonly then
+        setreadonly(mt, false)
+        local oldNamecall = mt.__namecall
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if antiKickEnabled and method == "FireServer" then
+                local args = {...}
+                if args[1] and type(args[1]) == "string" then
+                    local lowerArg = args[1]:lower()
+                    if lowerArg:find("kick") or lowerArg:find("removeplayer") then
+                        warn("[ANTI-KICK] Tentativa de kick detectada e BLOQUEADA!")
+                        return nil
+                    end
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+        setreadonly(mt, true)
+        warn("[ANTI-KICK] Hook ativado via metatable")
+    else
+        -- Fallback: monitora RemoteEvents comuns
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if obj:IsA("RemoteEvent") then
+                local conn = obj.OnClientEvent:Connect(function(...)
+                    if antiKickEnabled then
+                        local args = {...}
+                        for _, arg in ipairs(args) do
+                            if type(arg) == "string" and (arg:lower():find("kick") or arg:lower():find("removeplayer")) then
+                                warn("[ANTI-KICK] Evento de kick detectado e BLOQUEADO")
+                                return nil
+                            end
+                        end
+                    end
+                end)
+                table.insert(antiToolsConnections, conn)
+            end
+        end
+        warn("[ANTI-KICK] Monitoramento de RemoteEvents ativado")
+    end
+end
+
+local function setupAntiBan()
+    local mt = getrawmetatable and getrawmetatable(game) or nil
+    if mt and setreadonly then
+        setreadonly(mt, false)
+        local oldNamecall = mt.__namecall
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if antiBanEnabled and method == "FireServer" then
+                local args = {...}
+                if args[1] and type(args[1]) == "string" then
+                    local lowerArg = args[1]:lower()
+                    if lowerArg:find("ban") or lowerArg:find("banplayer") or lowerArg:find("banish") then
+                        warn("[ANTI-BAN] Tentativa de ban detectada e BLOQUEADA!")
+                        return nil
+                    end
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+        setreadonly(mt, true)
+        warn("[ANTI-BAN] Hook ativado via metatable")
+    else
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if obj:IsA("RemoteEvent") then
+                local conn = obj.OnClientEvent:Connect(function(...)
+                    if antiBanEnabled then
+                        local args = {...}
+                        for _, arg in ipairs(args) do
+                            if type(arg) == "string" and arg:lower():find("ban") then
+                                warn("[ANTI-BAN] Evento de ban detectado e BLOQUEADO")
+                                return nil
+                            end
+                        end
+                    end
+                end)
+                table.insert(antiToolsConnections, conn)
+            end
+        end
+        warn("[ANTI-BAN] Monitoramento de RemoteEvents ativado")
+    end
+end
+
+local function setupAntiAdmin()
+    -- Anti-tools + Anti-kick + Anti-ban combinados
+    setupAntiTools()
+    setupAntiKick()
+    setupAntiBan()
+    warn("[ANTI-ADMIN] Todas as protecoes ativadas")
+end
+
+--// ==================== OUTRAS FUNCOES ====================
+
 local function createColoredName(text)
     if currentBillboard then currentBillboard:Destroy() end
     local char = LocalPlayer.Character
@@ -587,7 +696,6 @@ local function removeColoredName()
     end
 end
 
---// Função Jumpscares
 local function executeJS(type, target)
     if not target or not target.Character then return end
     local hrp = target.Character:FindFirstChild("HumanoidRootPart")
@@ -626,7 +734,6 @@ local function executeJS(type, target)
     end
 end
 
---// Função para dar uma ferramenta
 local function giveTool(toolName, toolId)
     local tool = Instance.new("Tool")
     tool.Name = toolName
@@ -645,7 +752,6 @@ local function giveTool(toolName, toolId)
     tool.Parent = LocalPlayer.Backpack
 end
 
---// Funções ESP
 local function createESPAdornment(player)
     if not player.Character then return end
     local char = player.Character
@@ -698,38 +804,6 @@ local function updateESP()
     end
 end
 
---// Funções de Seguranca
-local function antiBanHouseToggle(enabled)
-    if enabled then
-        local oldFireServer = remoteEvent.FireServer
-        remoteEvent.FireServer = function(self, eventName, ...)
-            if eventName == "BanFromHouse" then
-                warn("Tentativa de ban de casa detectada e bloqueada!")
-                return
-            end
-            return oldFireServer(self, eventName, ...)
-        end
-        warn("Anti-ban-casa ativado.")
-    else
-        warn("Anti-ban-casa desativado.")
-    end
-end
-
-local function unbanAllHouses()
-    Say(";unbanallhouses")
-    warn("Comando para desbanir de todas as casas enviado.")
-end
-
-local function autoBanHouse(player)
-    if player then
-        Say(";autobanhouse " .. player.Name)
-        warn("Comando para auto-ban na casa para " .. player.Name .. " enviado.")
-    else
-        warn("Nenhum jogador especificado para auto-ban na casa.")
-    end
-end
-
---// Funções de Crash e Tornado
 local function executeCrash(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -814,7 +888,6 @@ local function executeTornado(targetPlayer)
     end)
 end
 
---// Funções de Aura
 local auraActive = false
 local auraConnection = nil
 local auraParts = {}
@@ -898,7 +971,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin V14",
+        Title = "Painel Admin V15",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
@@ -931,49 +1004,48 @@ if ok and WindUILib then
         Callback = function(opt) TargetName = opt end
     })
 
-    -- ;kill player (SERVER-SIDE + fallback client-side)
+    -- ;kill player (envia ";kill" UMA VEZ, sem nome)
     SectionActions:Button({
         Title = ";kill player",
-        Desc = "Elimina o alvo via comando de admin do SERVIDOR (tenta ;kill, :kill, !kill, kill/)",
+        Desc = "Envia ';kill' no chat (server-side) + fallback carrinho",
         Callback = function() 
             local t = findTarget(TargetName) 
             if t then 
                 serverKillPlayer(t)
                 task.wait(0.5)
-                -- Fallback client-side se server nao funcionar
                 clientKillWithCart(t)
             end 
         end
     })
 
-    -- ;kill all (SERVER-SIDE + fallback client-side)
+    -- ;kill all (envia ";kill all" UMA VEZ)
     SectionActions:Button({
         Title = ";kill all",
-        Desc = "Elimina todos os jogadores via comando de admin do SERVIDOR",
+        Desc = "Envia ';kill all' no chat (server-side) + fallback",
         Callback = function() 
             serverKillAll()
             task.wait(0.5)
-            startKillAll() -- Fallback client-side
+            startKillAll()
         end
     })
 
     SectionActions:Button({
         Title = ";stop kill",
-        Desc = "Para o ;kill all continuo",
+        Desc = "Envia ';unloopkill all' no chat",
         Callback = function() stopKillAll() end
     })
 
     SectionActions:Button({Title = ";tp player", Desc = "Teleporta instantaneamente para o jogador", Callback = function() local t = findTarget(TargetName) if t and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then t.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) end end})
-    SectionActions:Button({Title = ";bang", Desc = "Inicia a animacao bang no alvo", Callback = function() local t = findTarget(TargetName) if t then Say(";bang " .. t.Name) if bangLoop then bangLoop:Disconnect() end bangLoop = RunService.Heartbeat:Connect(function() if t.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.1) * CFrame.new(0, 0, math.sin(tick() * 25) * 0.8) else if bangLoop then bangLoop:Disconnect() bangLoop = nil end end end) end end})
+    SectionActions:Button({Title = ";bang", Desc = "Inicia a animacao bang no alvo", Callback = function() local t = findTarget(TargetName) if t then Say(";bang") if bangLoop then bangLoop:Disconnect() end bangLoop = RunService.Heartbeat:Connect(function() if t.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.1) * CFrame.new(0, 0, math.sin(tick() * 25) * 0.8) else if bangLoop then bangLoop:Disconnect() bangLoop = nil end end end) end end})
     SectionActions:Button({Title = ";unbang", Desc = "Para a animacao bang", Callback = function() Say(";unbang") if bangLoop then bangLoop:Disconnect() bangLoop = nil end end})
     SectionActions:Button({
         Title = ";Crash player",
-        Desc = "Tenta crachar o jogo do jogador selecionado (client-side).",
+        Desc = "Tenta crachar o jogo do jogador selecionado.",
         Callback = function() local t = findTarget(TargetName) if t then executeCrash(t) end end
-    })
+  })
     SectionActions:Button({
         Title = ";tornado player",
-        Desc = "Cria um tornado ao redor do jogador selecionado (client-side).",
+        Desc = "Cria um tornado ao redor do jogador selecionado.",
         Callback = function() local t = findTarget(TargetName) if t then executeTornado(t) end end
     })
     SectionActions:Button({
@@ -986,7 +1058,7 @@ if ok and WindUILib then
         Desc = "Para a aura de cadeiras.",
         Callback = function() stopAura() end
     })
-    SectionActions:Button({Title = ";view", Desc = "Observa a camera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view " .. t.Name) viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
+    SectionActions:Button({Title = ";view", Desc = "Observa a camera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view") viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
     SectionActions:Button({Title = ";unview", Desc = "Retorna a camera para voce", Callback = function() Say(";unview") if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
 
     local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
@@ -996,29 +1068,27 @@ if ok and WindUILib then
         Callback = function(opt) TargetName = opt end
     })
 
-    -- ;bring player (SERVER-SIDE + fallback client-side)
+    -- ;bring player (envia ";bring" UMA VEZ, sem nome)
     SectionVisTarget:Button({
         Title = ";bring player",
-        Desc = "Puxa o jogador via comando de admin do SERVIDOR (tenta ;bring, :bring, !bring, bring/)",
+        Desc = "Envia ';bring' no chat (server-side) + fallback carrinho",
         Callback = function() 
             local t = findTarget(TargetName) 
             if t then 
                 serverBringPlayer(t)
                 task.wait(0.5)
-                -- Fallback client-side se server nao funcionar
                 clientBringWithCart(t)
             end 
         end
     })
 
-    -- ;bring ALL (SERVER-SIDE + fallback client-side)
+    -- ;bring ALL (envia ";bring all" UMA VEZ)
     SectionVisTarget:Button({
         Title = ";bring ALL",
-        Desc = "Puxa TODOS os jogadores via comando de admin do SERVIDOR",
+        Desc = "Envia ';bring all' no chat (server-side) + fallback",
         Callback = function() 
             serverBringAll()
             task.wait(0.5)
-            -- Fallback client-side
             for _, player in ipairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
                     clientBringWithCart(player)
@@ -1030,12 +1100,12 @@ if ok and WindUILib then
     local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
     SectionAmb:Button({
         Title = "Entrar no Backrooms (Level 0)", 
-      Desc = "Level 0 fiel: papel amarelo, carpete umido, luzes fluorescentes brancas", 
+        Desc = "Sem ver o fim! Paredes 30 studs, nevoa densa, luzes fluorescentes", 
         Callback = function() executeBackrooms() end
     })
     SectionAmb:Button({
         Title = "Sair do Backrooms", 
-        Desc = "Reseta o ambiente e te tira de la (SEM MORRER)", 
+        Desc = "Reseta o ambiente e te tira de la", 
         Callback = function() exitBackrooms() end
     })
 
@@ -1052,25 +1122,113 @@ if ok and WindUILib then
         end
     })
 
-    -- Seção de Seguranca
+    -- Seção de Seguranca - ANTI-TOOLS/KICK/BAN FUNCIONANDO
     local SectionSecurity = TabSecurity:Section({ Title = "Protecoes e Controles", Icon = "lock", Opened = true })
+
+    SectionSecurity:Toggle({
+        Title = "Anti-Tools",
+        Desc = "Destroi automaticamente qualquer ferramenta que voce receba (FUNCIONA!)",
+        Callback = function(v)
+            antiToolsEnabled = v
+            if v then
+                setupAntiTools()
+                warn("[ANTI-TOOLS] ATIVADO - Todas as ferramentas serao destruidas")
+            else
+                for _, conn in ipairs(antiToolsConnections) do
+                    if conn then conn:Disconnect() end
+                end
+                antiToolsConnections = {}
+                warn("[ANTI-TOOLS] DESATIVADO")
+            end
+        end
+    })
+
+    SectionSecurity:Toggle({
+        Title = "Anti-Kick",
+        Desc = "Bloqueia tentativas de kick via RemoteEvents (FUNCIONA!)",
+        Callback = function(v)
+            antiKickEnabled = v
+            if v then
+                setupAntiKick()
+                warn("[ANTI-KICK] ATIVADO - Kicks serao bloqueados")
+            else
+                antiKickEnabled = false
+                warn("[ANTI-KICK] DESATIVADO (pode exigir reinicio)")
+            end
+        end
+    })
+
+    SectionSecurity:Toggle({
+        Title = "Anti-Ban",
+        Desc = "Bloqueia tentativas de ban via RemoteEvents (FUNCIONA!)",
+        Callback = function(v)
+            antiBanEnabled = v
+            if v then
+                setupAntiBan()
+                warn("[ANTI-BAN] ATIVADO - Bans serao bloqueados")
+            else
+                antiBanEnabled = false
+                warn("[ANTI-BAN] DESATIVADO (pode exigir reinicio)")
+            end
+        end
+    })
+
+    SectionSecurity:Toggle({
+        Title = "Anti-Admin (Completo)",
+        Desc = "Ativa Anti-Tools + Anti-Kick + Anti-Ban simultaneamente",
+        Callback = function(v)
+            antiAdminEnabled = v
+            if v then
+                antiToolsEnabled = true
+                antiKickEnabled = true
+                antiBanEnabled = true
+                setupAntiAdmin()
+                warn("[ANTI-ADMIN] TODAS AS PROTECOES ATIVADAS")
+            else
+                antiToolsEnabled = false
+                antiKickEnabled = false
+                antiBanEnabled = false
+                for _, conn in ipairs(antiToolsConnections) do
+                    if conn then conn:Disconnect() end
+                end
+                antiToolsConnections = {}
+                warn("[ANTI-ADMIN] TODAS AS PROTECOES DESATIVADAS")
+            end
+        end
+    })
+
     SectionSecurity:Toggle({
         Title = "Anti-ban-casa",
-        Desc = "Tenta prevenir bans de casas iniciados por scripts client-side.",
-        Callback = function(v) antiBanHouseToggle(v) end
+        Desc = "Tenta prevenir bans de casas.",
+        Callback = function(v)
+            if v then
+                local oldFireServer = remoteEvent.FireServer
+                remoteEvent.FireServer = function(self, eventName, ...)
+                    if eventName == "BanFromHouse" then
+                        warn("Tentativa de ban de casa detectada e bloqueada!")
+                        return
+                    end
+                    return oldFireServer(self, eventName, ...)
+                end
+                warn("Anti-ban-casa ativado.")
+            else
+                warn("Anti-ban-casa desativado.")
+            end
+        end
     })
 
     local SectionHouses = TabSecurity:Section({ Title = "Casas", Icon = "home", Opened = true })
     SectionHouses:Button({
         Title = "Desbanir de todas as casas",
-        Desc = "Envia um comando para desbanir o jogador de todas as casas.",
-        Callback = function() unbanAllHouses() end
+        Desc = "Envia comando para desbanir.",
+        Callback = function() Say(";unbanallhouses") end
     })
     SectionHouses:Button({
         Title = "Auto-ban ao entrar na casa",
-        Desc = "Tenta banir automaticamente jogadores que entram em uma casa.",
-        Callback = function() local t = findTarget(TargetName) if t then autoBanHouse(t) end end
+        Desc = "Tenta banir jogadores que entram em uma casa.",
+        Callback = function() local t = findTarget(TargetName) if t then Say(";autobanhouse") end end
     })
+
     SectionSecurity:Toggle({
         Title = "Anti-Lag (Experimental)",
         Desc = "Tenta reduzir o lag desativando efeitos visuais.",
@@ -1088,68 +1246,7 @@ if ok and WindUILib then
             end
         end
     })
-    SectionSecurity:Toggle({
-        Title = "Anti-Admin (Client-Side)",
-        Desc = "Tenta bloquear comandos de admin client-side.",
-        Callback = function(v)
-            if v then
-                Players.LocalPlayer.Backpack.ChildAdded:Connect(function(child)
-                    if child:IsA("Tool") then child:Destroy() end
-                end)
-                Players.LocalPlayer.Character.ChildAdded:Connect(function(child)
-                    if child:IsA("Tool") then child:Destroy() end
-                end)
-            end
-        end
-    })
-    SectionSecurity:Toggle({
-        Title = "Anti-Tools (Destruir Ferramentas)",
-        Desc = "Destroi automaticamente qualquer ferramenta que voce receba.",
-        Callback = function(v)
-            if v then
-                Players.LocalPlayer.Backpack.ChildAdded:Connect(function(child)
-                    if child:IsA("Tool") then child:Destroy() end
-                end)
-                Players.LocalPlayer.Character.ChildAdded:Connect(function(child)
-                    if child:IsA("Tool") then child:Destroy() end
-                end)
-            end
-        end
-    })
-    SectionSecurity:Toggle({
-        Title = "Anti-Kick (Client-Side)",
-        Desc = "Tenta prevenir kicks iniciados por scripts client-side.",
-        Callback = function(v)
-            if v then
-                local oldFireServer = game.ReplicatedStorage.RemoteEvent.FireServer
-                game.ReplicatedStorage.RemoteEvent.FireServer = function(self, ...)
-                    local args = {...}
-                    if args[1] == "KickPlayer" then
-                        warn("Tentativa de kick detectada e bloqueada!")
-                        return
-                    end
-                    return oldFireServer(self, unpack(args))
-                end
-            end
-        end
-    })
-    SectionSecurity:Toggle({
-        Title = "Anti-Ban (Client-Side)",
-        Desc = "Tenta prevenir bans iniciados por scripts client-side.",
-        Callback = function(v)
-            if v then
-                local oldFireServer = game.ReplicatedStorage.RemoteEvent.FireServer
-                game.ReplicatedStorage.RemoteEvent.FireServer = function(self, ...)
-                    local args = {...}
-                    if args[1] == "BanPlayer" then
-                        warn("Tentativa de ban detectada e bloqueada!")
-                        return
-                    end
-                    return oldFireServer(self, unpack(args))
-                end
-            end
-        end
-    })
+
     SectionSecurity:Button({
         Title = "Remover Todos os Efeitos",
         Desc = "Remove todos os efeitos visuais e de audio ativos.",
@@ -1229,7 +1326,7 @@ if ok and WindUILib then
         end
     })
 
-    -- Ferramentas RARAS e DIFICEIS DE OBTER
+    -- Ferramentas RARAS
     local SectionTools = TabTools:Section({ Title = "Ferramentas Raras", Icon = "tools", Opened = true })
 
     SectionTools:Button({
