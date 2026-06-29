@@ -204,23 +204,31 @@ local function startAura()
     local radius = 7
     
     for i = 1, numChairs do
-        -- Tenta pegar um modelo de cadeira real do jogo ou cria uma física
+        -- Cadeiras REAIS e FÍSICAS
         local chair = Instance.new("Seat")
-        chair.Size = Vector3.new(2, 2, 2)
+        chair.Size = Vector3.new(3, 1, 3)
         chair.BrickColor = BrickColor.new("Bright red")
-        chair.Anchored = true
+        chair.Anchored = false
         chair.CanCollide = true
         chair.Parent = Workspace
         
-        -- Adiciona um encosto visual
         local back = Instance.new("Part", chair)
-        back.Size = Vector3.new(2, 2, 0.5)
-        back.Position = chair.Position + Vector3.new(0, 1, 0.7)
-        back.Anchored = true
+        back.Size = Vector3.new(3, 3, 0.5)
+        back.BrickColor = BrickColor.new("Bright red")
         back.CanCollide = true
         
-        table.insert(auraParts, chair)
-        table.insert(auraParts, back)
+        local weld = Instance.new("WeldConstraint", chair)
+        weld.Part0 = chair
+        weld.Part1 = back
+        back.CFrame = chair.CFrame * CFrame.new(0, 1.5, 1.2)
+        
+        local bp = Instance.new("BodyPosition", chair)
+        bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        
+        local bg = Instance.new("BodyGyro", chair)
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        
+        table.insert(auraParts, {chair = chair, bp = bp, bg = bg})
     end
 
     auraConnection = RunService.Heartbeat:Connect(function()
@@ -229,19 +237,14 @@ local function startAura()
             return
         end
         local root = LocalPlayer.Character.HumanoidRootPart
-        local t = tick() * 3
+        local t = tick() * 2
         
-        for i = 1, numChairs do
-            local chair = auraParts[(i-1)*2 + 1]
-            local back = auraParts[(i-1)*2 + 2]
-            if chair and back then
-                local angle = (i / numChairs) * math.pi * 2 + t
-                local x = math.cos(angle) * radius
-                local z = math.sin(angle) * radius
-                local targetCF = root.CFrame * CFrame.new(x, 0, z) * CFrame.Angles(0, -angle, 0)
-                chair.CFrame = targetCF
-                back.CFrame = targetCF * CFrame.new(0, 1, 0.7)
-            end
+        for i, data in ipairs(auraParts) do
+            local angle = (i / numChairs) * math.pi * 2 + t
+            local x = math.cos(angle) * radius
+            local z = math.sin(angle) * radius
+            data.bp.Position = (root.CFrame * CFrame.new(x, 0, z)).Position
+            data.bg.CFrame = CFrame.new(data.chair.Position, root.Position)
         end
     end)
 end
@@ -253,8 +256,12 @@ local function stopAura()
         auraConnection:Disconnect()
         auraConnection = nil
     end
-    for _, chair in ipairs(auraParts) do
-        chair:Destroy()
+    for _, data in ipairs(auraParts) do
+        if typeof(data) == "table" and data.chair then
+            data.chair:Destroy()
+        elseif typeof(data) == "Instance" then
+            data:Destroy()
+        end
     end
     auraParts = {}
     warn("Aura de cadeiras desativada.")
@@ -353,31 +360,23 @@ local function executeKillWithFling(targetPlayer)
     
     if not hrp or not targetHRP then return end
     
-    -- Método de Fling Real (Invisível e Poderoso)
-    local oldPos = hrp.CFrame
-    local flingPart = Instance.new("Part")
-    flingPart.Size = Vector3.new(5, 5, 5)
-    flingPart.Transparency = 1
-    flingPart.CanCollide = false
-    flingPart.Parent = Workspace
-    
-    local bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bodyVelocity.Velocity = Vector3.new(10000, 10000, 10000)
-    bodyVelocity.Parent = flingPart
-    
-    local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
-    bodyAngularVelocity.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bodyAngularVelocity.AngularVelocity = Vector3.new(10000, 10000, 10000)
-    bodyAngularVelocity.Parent = flingPart
+    local oldVelocity = hrp.Velocity
+    local oldCFrame = hrp.CFrame
     
     task.spawn(function()
-        for i = 1, 50 do
-            if not targetHRP or not targetHRP.Parent then break end
-            flingPart.CFrame = targetHRP.CFrame
-            task.wait()
-        end
-        flingPart:Destroy()
+        local timer = 0
+        local connection
+        connection = RunService.Heartbeat:Connect(function()
+            if not targetHRP or not targetHRP.Parent or timer > 1.5 then
+                connection:Disconnect()
+                hrp.Velocity = Vector3.new(0, 0, 0)
+                hrp.CFrame = oldCFrame
+                return
+            end
+            timer = timer + task.wait()
+            hrp.CFrame = targetHRP.CFrame
+            hrp.Velocity = Vector3.new(500000, 500000, 500000)
+        end)
     end)
     
     -- Tenta matar forçando o estado Dead se possível (client-side bypass)
@@ -432,14 +431,32 @@ local function executeBringWithTeleport(targetPlayer)
     local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
     if not adminRoot then return end
 
-    -- Método de Bring Real (Usa Velocity para forçar o movimento se o teleporte falhar)
-    targetRoot.CFrame = adminRoot.CFrame * CFrame.new(0, 2, -3)
+    -- Método de Bring Real (Usa Carrinho para puxar de verdade)
+    local cartModel = Instance.new("Model", Workspace)
+    local seat = Instance.new("Seat", cartModel)
+    seat.Size = Vector3.new(4, 1, 4)
+    seat.Transparency = 1
+    seat.CanCollide = true
     
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = (adminRoot.Position - targetRoot.Position).Unit * 50
-    bv.Parent = targetRoot
-    Debris:AddItem(bv, 0.5)
+    local bp = Instance.new("BodyPosition", seat)
+    bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bp.Position = targetRoot.Position
+    
+    task.spawn(function()
+        local t = 0
+        while cartModel.Parent and t < 5 do
+            targetRoot.CFrame = seat.CFrame
+            seat:Sit(targetPlayer.Character:FindFirstChildOfClass("Humanoid"))
+            if seat.Occupant then break end
+            t = t + task.wait()
+        end
+        
+        if seat.Occupant then
+            bp.Position = adminRoot.Position + adminRoot.CFrame.LookVector * 5
+            task.wait(1.5)
+        end
+        cartModel:Destroy()
+    end)
 end
 
 local function executeBringWithCart(targetPlayer)
@@ -597,19 +614,21 @@ local function executeBackrooms()
     createPart(Vector3.new(startX - halfWallThickness, basePos.Y + wallHeight/2, basePos.Z), Vector3.new(wallThickness, wallHeight, mazeGridSize * cellSize + wallThickness), nil, nil, "WallW")
     createPart(Vector3.new(startX + mazeGridSize * cellSize + halfWallThickness, basePos.Y + wallHeight/2, basePos.Z), Vector3.new(wallThickness, wallHeight, mazeGridSize * cellSize + wallThickness), nil, nil, "WallE")
 
-    -- Geração de paredes internas (grid denso com algumas aberturas)
+    -- Geração de paredes internas FÍSICAS
     for x = 0, mazeGridSize - 1 do
         for z = 0, mazeGridSize - 1 do
             local currentCellX = startX + x * cellSize + cellSize / 2
             local currentCellZ = startZ + z * cellSize + cellSize / 2
 
-            -- Gerar paredes horizontais
-            if math.random() > 0.3 then -- Chance de ter uma parede
-                createPart(Vector3.new(currentCellX, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), Vector3.new(cellSize, wallHeight, wallThickness))
+            -- Gerar paredes horizontais FÍSICAS
+            if math.random() > 0.3 then
+                local p = createPart(Vector3.new(currentCellX, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), Vector3.new(cellSize, wallHeight, wallThickness))
+                p.CanCollide = true
             end
-            -- Gerar paredes verticais
-            if math.random() > 0.3 then -- Chance de ter uma parede
-                createPart(Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ), Vector3.new(wallThickness, wallHeight, cellSize))
+            -- Gerar paredes verticais FÍSICAS
+            if math.random() > 0.3 then
+                local p = createPart(Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ), Vector3.new(wallThickness, wallHeight, cellSize))
+                p.CanCollide = true
             end
 
             -- Adicionar luzes piscantes (menos brilhantes)
@@ -815,7 +834,7 @@ if ok and WindUILib then
     local TabVisuals = Window:Tab({ Title = "Efeitos Visuais", Icon = "sparkles" })
     local TabTools = Window:Tab({ Title = "Ferramentas", Icon = "wrench" }) -- Nova aba de Ferramentas
     local TabJumpscares = Window:Tab({ Title = "Jumpscares e Avatar", Icon = "zap" })
-    local TabSecurity = Window:Tab({ Title = "[!] Segurança", Icon = "shield-alt" }) -- Nova aba de Segurança
+    local TabSecurity = Window:Tab({ Title = "[!] Segurança", Icon = "shield-check" }) -- Nova aba de Segurança
 
     local function getPlayersList()
         local t = {}
@@ -916,7 +935,7 @@ SectionVisTarget:Button({
         Callback = function(v)
             espActive = v
             updateESP()
-         end
+        end
     })
 
     -- Seção de Segurança
