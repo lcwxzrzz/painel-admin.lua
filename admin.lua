@@ -147,40 +147,38 @@ local function executeKillWithFling(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return end
+    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+    if not targetRoot or not targetHumanoid then return end
 
-    local char = LocalPlayer.Character
-    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
+    -- Tenta desabilitar o controle do servidor sobre o personagem do alvo
+    targetHumanoid.PlatformStand = true
 
-    local oldPos = rootPart.CFrame
+    -- Aplica uma força para cima extrema e depois teletransporta para fora do mapa
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "FlingBV"
+    bv.Parent = targetRoot
+    bv.Velocity = Vector3.new(0, 10000, 0) -- Força para cima extrema
+    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    Debris:AddItem(bv, 0.5) -- Remove rapidamente
 
-    local function fling(targetPart)
-        local bv = Instance.new("BodyVelocity")
-        bv.Name = "FlingBV"
-        bv.Parent = targetPart
-        bv.Velocity = Vector3.new(0, 9e8, 0) -- Força para cima extrema
-        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        Debris:AddItem(bv, 0.5) -- Remove rapidamente
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "FlingBG"
+    bg.Parent = targetRoot
+    bg.CFrame = CFrame.new(targetRoot.Position, targetRoot.Position + Vector3.new(math.random(-10,10), 0, math.random(-10,10)))
+    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    Debris:AddItem(bg, 0.5)
 
-        local bg = Instance.new("BodyGyro")
-        bg.Name = "FlingBG"
-        bg.Parent = targetPart
-        bg.CFrame = CFrame.new(targetPart.Position, targetPart.Position + Vector3.new(math.random(-10,10), 0, math.random(-10,10)))
-        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        Debris:AddItem(bg, 0.5)
-    end
-
-    -- Tenta flinguir a parte principal do alvo
-    fling(targetRoot)
-
-    -- Teleporta o jogador para uma posição muito alta e depois para baixo do mapa para garantir a morte
+    task.wait(0.1)
     targetRoot.CFrame = CFrame.new(targetRoot.Position.X, 10000, targetRoot.Position.Z)
     task.wait(0.1)
     targetRoot.CFrame = CFrame.new(targetRoot.Position.X, -10000, targetRoot.Position.Z)
 
-    -- Retorna o jogador local para a posição original
-    rootPart.CFrame = oldPos
+    -- Tenta resetar o personagem do alvo (pode ser bloqueado pelo servidor)
+    targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
+    targetHumanoid.Health = 0
+
+    -- Desabilita PlatformStand após um tempo
+    task.delay(1, function() if targetHumanoid then targetHumanoid.PlatformStand = false end end)
 end
 
 local function executeKillWithCart(targetPlayer)
@@ -221,14 +219,21 @@ local function executeBringWithTeleport(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return end
+    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+    if not targetRoot or not targetHumanoid then return end
 
     local adminChar = LocalPlayer.Character
     local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
     if not adminRoot then return end
 
+    -- Tenta desabilitar o controle do servidor sobre o personagem do alvo
+    targetHumanoid.PlatformStand = true
+
     -- Teleporta o alvo para a posição do admin, um pouco acima para evitar colisão imediata
     targetRoot.CFrame = adminRoot.CFrame * CFrame.new(0, 5, 0)
+
+    -- Desabilita PlatformStand após um tempo
+    task.delay(1, function() if targetHumanoid then targetHumanoid.PlatformStand = false end end)
 end
 
 local function executeBringWithCart(targetPlayer)
@@ -459,7 +464,7 @@ local function giveTool(toolName, toolId)
         mesh.MeshId = "rbxassetid://" .. toolId .. "/mesh"
     end
     
-    tool.Parent = LocalPllayer.Backpack
+    tool.Parent = LocalPlayer.Backpack
 end
 
 --// Função para criar o Boombox Voador
@@ -588,6 +593,7 @@ if ok and WindUILib then
     local TabVisuals = Window:Tab({ Title = "Efeitos Visuais", Icon = "sparkles" })
     local TabTools = Window:Tab({ Title = "Ferramentas", Icon = "wrench" }) -- Nova aba de Ferramentas
     local TabJumpscares = Window:Tab({ Title = "Jumpscares e Avatar", Icon = "zap" })
+    local TabSecurity = Window:Tab({ Title = "Segurança", Icon = "shield-alt" }) -- Nova aba de Segurança
 
     local function getPlayersList()
         local t = {}
@@ -608,11 +614,11 @@ SectionActions:Button({
 	        Callback = function() local t = findTarget(TargetName) if t then executeKillWithFling(t) end end
 	    })
 
-    SectionActions:Button({
-        Title = ";kill all",
-        Desc = "Elimina todos os jogadores continuamente com o carrinho",
-        Callback = function() startKillAll() end
-    })
+SectionActions:Button({
+		        Title = ";kill all",
+		        Desc = "Elimina todos os jogadores continuamente (client-side)",
+		        Callback = function() startKillAll() end
+		    })
 
     SectionActions:Button({
         Title = ";stop kill",
@@ -643,7 +649,7 @@ SectionVisTarget:Button({
     -- Novo botão: ;bring ALL (Movido para Efeitos Visuais)
     SectionVisTarget:Button({
         Title = ";bring ALL",
-        Desc = "Puxa todos os jogadores para sua localização com carrinhos",
+        Desc = "Puxa todos os jogadores para sua localização (client-side)",
         Callback = function() 
             for _, player in ipairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
@@ -670,6 +676,186 @@ SectionVisTarget:Button({
             updateESP()
         end
     })
+
+    -- Seção de Segurança
+    local SectionSecurity = TabSecurity:Section({ Title = "Proteções e Controles", Icon = "lock", Opened = true })
+    SectionSecurity:Toggle({
+        Title = "Anti-Lag (Experimental)",
+        Desc = "Tenta reduzir o lag desativando efeitos visuais e limitando atualizações de física.",
+        Callback = function(v)
+            if v then
+                -- Implementação Anti-Lag (client-side)
+                -- Exemplo: Desativar sombras, partículas, etc.
+                Lighting.GlobalShadows = false
+                for _, part in ipairs(Workspace:GetDescendants()) do
+                    if part:IsA("ParticleEmitter") then
+                        part.Enabled = false
+                    end
+                end
+            else
+                -- Reativar
+                Lighting.GlobalShadows = true
+                for _, part in ipairs(Workspace:GetDescendants()) do
+                    if part:IsA("ParticleEmitter") then
+                        part.Enabled = true
+                    end
+                end
+            end
+        end
+    })
+    SectionSecurity:Toggle({
+        Title = "Anti-Admin (Client-Side)",
+        Desc = "Tenta bloquear comandos de admin client-side (ex: kick, ban, give tool).",
+        Callback = function(v)
+            if v then
+                -- Implementação Anti-Admin (client-side)
+                -- Isso é complexo e depende de como o painel de admin inimigo funciona.
+                -- Pode envolver hooks em RemoteEvents/Functions ou detecção de ferramentas indesejadas.
+                -- Por exemplo, um simples anti-tool:
+                Players.LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then
+                        warn("Ferramenta detectada: " .. child.Name .. ". Destruindo...")
+                        child:Destroy()
+                    end
+                end)
+                Players.LocalPlayer.Character.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then
+                        warn("Ferramenta detectada no personagem: " .. child.Name .. ". Destruindo...")
+                        child:Destroy()
+                    end
+                end)
+            else
+                -- Desativar (difícil de reverter completamente sem reiniciar o script)
+            end
+        end
+    })
+    SectionSecurity:Toggle({
+        Title = "Anti-Tools (Destruir Ferramentas)",
+        Desc = "Destrói automaticamente qualquer ferramenta que você receba.",
+        Callback = function(v)
+            if v then
+                -- Implementação Anti-Tools
+                Players.LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then
+                        child:Destroy()
+                    end
+                end)
+                Players.LocalPlayer.Character.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then
+                        child:Destroy()
+                    end
+                end)
+            else
+                -- Desativar (difícil de reverter completamente sem reiniciar o script)
+            end
+        end
+    })
+    SectionSecurity:Toggle({
+        Title = "Anti-Kick (Client-Side)",
+        Desc = "Tenta prevenir kicks iniciados por scripts client-side.",
+        Callback = function(v)
+            if v then
+                -- Implementação Anti-Kick (client-side)
+                -- Isso geralmente envolve anular chamadas de RemoteEvents/Functions que causam o kick.
+                -- Exemplo (muito genérico e pode não funcionar em todos os casos):
+                local oldFireServer = game.ReplicatedStorage.RemoteEvent.FireServer
+                game.ReplicatedStorage.RemoteEvent.FireServer = function(self, ...)
+                    local args = {...}
+                    if args[1] == "KickPlayer" then -- Exemplo de nome de evento de kick
+                        warn("Tentativa de kick detectada e bloqueada!")
+                        return
+                    end
+                    return oldFireServer(self, unpack(args))
+                end
+            else
+                -- Desativar (difícil de reverter completamente sem reiniciar o script)
+            end
+        end
+    })
+    SectionSecurity:Toggle({
+        Title = "Anti-Ban (Client-Side)",
+        Desc = "Tenta prevenir bans iniciados por scripts client-side.",
+        Callback = function(v)
+            if v then
+                -- Implementação Anti-Ban (client-side)
+                -- Similar ao anti-kick, mas para eventos de ban.
+                local oldFireServer = game.ReplicatedStorage.RemoteEvent.FireServer
+                game.ReplicatedStorage.RemoteEvent.FireServer = function(self, ...)
+                    local args = {...}
+                    if args[1] == "BanPlayer" then -- Exemplo de nome de evento de ban
+                        warn("Tentativa de ban detectada e bloqueada!")
+                        return
+                    end
+                    return oldFireServer(self, unpack(args))
+                end
+            else
+                -- Desativar (difícil de reverter completamente sem reiniciar o script)
+            end
+        end
+    })
+    SectionSecurity:Button({
+        Title = "Remover Todos os Efeitos",
+        Desc = "Remove todos os efeitos visuais e de áudio ativos (client-side).",
+        Callback = function()
+            -- Parar música local
+            if currentSound then currentSound:Destroy() currentSound = nil end
+            -- Sair do Backrooms
+            backroomsActive = false; if backroomsFolder then backroomsFolder:Destroy() end Lighting.FogEnd = 100000; Lighting.Ambient = Color3.fromRGB(127, 127, 127); Lighting.Brightness = 2; if LocalPlayer.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(0, 5, 0) end
+            -- Desativar ESP
+            espActive = false; updateESP()
+            -- Resetar câmera
+            if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid
+            -- Remover nome colorido
+            removeColoredName()
+            -- Resetar iluminação (visão noturna, motion blur)
+            Lighting.Brightness = 2; Lighting.ExposureCompensation = 0; if Lighting:FindFirstChild("NV_Effect") then Lighting.NV_Effect:Destroy() end
+            RunService:UnbindFromRenderStep("MotionBlur"); if Lighting:FindFirstChild("MB_Effect") then Lighting.MB_Effect:Destroy() end
+            warn("Todos os efeitos visuais e de áudio foram removidos.")
+        end
+    })
+    SectionSecurity:Button({
+        Title = "Limpar Mochila",
+        Desc = "Remove todas as ferramentas da sua mochila.",
+        Callback = function()
+            for _, item in ipairs(Players.LocalPlayer.Backpack:GetChildren()) do
+                if item:IsA("Tool") then
+                    item:Destroy()
+                end
+            end
+            warn("Mochila limpa.")
+        end
+    })
+    SectionSecurity:Button({
+        Title = "Limpar Personagem",
+        Desc = "Remove todas as ferramentas do seu personagem.",
+        Callback = function()
+            if Players.LocalPlayer.Character then
+                for _, item in ipairs(Players.LocalPlayer.Character:GetChildren()) do
+                    if item:IsA("Tool") then
+                        item:Destroy()
+                    end
+                end
+            end
+            warn("Personagem limpo de ferramentas.")
+        end
+    })
+
+    -- Atualização da lista de jogadores ao entrar/sair
+    Players.PlayerAdded:Connect(function()
+        local l = getPlayersList()
+        DropdownMain:SetValues(l)
+        DropdownVis:SetValues(l)
+        DropdownJump:SetValues(l)
+        updateESP() -- Atualiza ESP para novos jogadores
+    end)
+    Players.PlayerRemoving:Connect(function()
+        local l = getPlayersList()
+        DropdownMain:SetValues(l)
+        DropdownVis:SetValues(l)
+        DropdownJump:SetValues(l)
+        removeESPAdornment(Players:GetPlayerByUserId(TargetName)) -- Remove adornment se o alvo sair
+        updateESP() -- Atualiza ESP para jogadores que saíram
+    end)
 
     SectionFX:Button({Title = "Screen Shake", Desc = "Efeito de impacto", Callback = function() local s = tick() local c; c = RunService.RenderStepped:Connect(function() if tick()-s > 1 then c:Disconnect() return end Camera.CFrame = Camera.CFrame * CFrame.Angles(math.rad(math.random(-1,1)), math.rad(math.random(-1,1)), 0) end) end})
 
