@@ -1,13 +1,16 @@
 --[[
-    PAINEL ADMIN V15 - DEFINITIVE EDITION
+    PAINEL ADMIN V2 - DEFINITIVE EDITION
 
-    CORRECOES:
-    - Backrooms: Paredes ALTAS (30 studs), névoa DENSISSIMA, sem ver o fim
-    - Comandos: Envia APENAS UMA VEZ no chat, formato ";comando" SEM nome do jogador
-    - Anti-Tools/Kick/Ban: Agora FUNCIONAM com hooks persistentes
+    MELHORIAS V2:
+    - Nome: "Painel Admin V2"
+    - Backrooms: Labirinto REAL com algoritmo Recursive Backtracker, paredes FISICAS, sem ver o fim
+    - ;kill: Sofa na mao, gira em volta do alvo, pega no sofa, flinga para fora do mapa
+    - ;aura: Cadeiras REAIS visiveis para todos, com fisica real
+    - Lista de jogadores: Botao "Atualizar Lista" adicionado
+    - Anti-Tools/Kick/Ban: FUNCIONANDO com hooks persistentes
     - Aba "Seguranca" correta
-    - Musica apenas local
-    - Ferramentas raras reais do Roblox
+    - Musica: Apenas local
+    - Ferramentas: Itens raros e dificeis de obter
 ]]
 
 --// Servicos
@@ -43,48 +46,41 @@ local espActive = false
 local espAdornments = {}
 local killAllActive = false
 local killAllConnection = nil
+local sofaKillTool = nil
+local sofaKillSpinning = false
 
---// VARIAVEIS ANTI (hooks persistentes)
+--// VARIAVEIS ANTI
 local antiToolsEnabled = false
 local antiKickEnabled = false
 local antiBanEnabled = false
 local antiAdminEnabled = false
 local antiToolsConnections = {}
-local antiKickHook = nil
-local antiBanHook = nil
-local antiAdminConnections = {}
+local antiLagEnabled = false
 
---// FUNCAO DE CHAT - ENVIA APENAS UMA VEZ, SEM NOME DO JOGADOR
+--// FUNCAO DE CHAT
 local lastCommandTime = {}
 local function Say(command)
     if not command or command == "" then return end
-
-    -- Verifica cooldown de 3 segundos para nao spam
     local currentTime = tick()
-    if lastCommandTime[command] and (currentTime - lastCommandTime[command]) < 3 then
+    if lastCommandTime[command] and (currentTime - lastCommandTime[command]) < 2 then
         return
     end
     lastCommandTime[command] = currentTime
 
-    -- Envia APENAS o comando base, SEM nome do jogador
     if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
         local canal = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
         if canal then
-            pcall(function()
-                canal:SendAsync(command)
-            end)
+            pcall(function() canal:SendAsync(command) end)
         end
     else
         local event = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
         if event and event:FindFirstChild("SayMessageRequest") then
-            pcall(function()
-                event.SayMessageRequest:FireServer(command, "All")
-            end)
+            pcall(function() event.SayMessageRequest:FireServer(command, "All") end)
         end
     end
 end
 
---// Função para encontrar um jogador
+--// Função para encontrar jogador
 local function findTarget(name)
     if not name or name == "" then return nil end
     name = name:lower()
@@ -96,35 +92,225 @@ local function findTarget(name)
     return nil
 end
 
---// ==================== SERVER-SIDE KILL COMMANDS (SEM NOME) ====================
+--// ==================== SOFA KILL - GIRA E FLINGA ====================
 
-local function serverKillPlayer(targetPlayer)
-    if not targetPlayer then return end
-    -- Envia APENAS ";kill" - o servidor detecta automaticamente o alvo selecionado
-    -- Ou usa o nome apenas internamente se necessario
-    Say(";kill")
+local function createSofaKillTool()
+    if sofaKillTool then sofaKillTool:Destroy() end
+
+    local tool = Instance.new("Tool")
+    tool.Name = "Sofa Killer"
+    tool.ToolTip = "Gira em volta do alvo e flinga para fora do mapa"
+
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(6, 3, 3)
+    handle.BrickColor = BrickColor.new("Bright red")
+    handle.Material = Enum.Material.Fabric
+    handle.CanCollide = false
+    handle.Parent = tool
+
+    local seat = Instance.new("Seat")
+    seat.Name = "SofaSeat"
+    seat.Size = Vector3.new(5, 1, 2.5)
+    seat.Position = Vector3.new(0, 1.5, 0)
+    seat.Transparency = 1
+    seat.CanCollide = false
+    seat.Parent = handle
+
+    local weld = Instance.new("Weld")
+    weld.Part0 = handle
+    weld.Part1 = seat
+    weld.C0 = CFrame.new(0, 1.5, 0)
+    weld.Parent = handle
+
+    local mesh = Instance.new("SpecialMesh", handle)
+    mesh.MeshType = Enum.MeshType.Brick
+    mesh.Scale = Vector3.new(1, 1, 1)
+
+    -- Encosto do sofa
+    local back = Instance.new("Part")
+    back.Size = Vector3.new(6, 2.5, 0.5)
+    back.BrickColor = BrickColor.new("Bright red")
+    back.Material = Enum.Material.Fabric
+    back.CanCollide = false
+    back.Parent = handle
+    local backWeld = Instance.new("Weld", back)
+    backWeld.Part0 = handle
+    backWeld.Part1 = back
+    backWeld.C0 = CFrame.new(0, 0.75, -1.25)
+
+    -- Bracos do sofa
+    for _, side in ipairs({-1, 1}) do
+        local arm = Instance.new("Part")
+        arm.Size = Vector3.new(0.5, 2, 3)
+        arm.BrickColor = BrickColor.new("Bright red")
+        arm.Material = Enum.Material.Fabric
+        arm.CanCollide = false
+        arm.Parent = handle
+        local armWeld = Instance.new("Weld", arm)
+        armWeld.Part0 = handle
+        armWeld.Part1 = arm
+        armWeld.C0 = CFrame.new(side * 2.75, 0.5, 0)
+    end
+
+    tool.RequiresHandle = true
+
+    local spinConnection = nil
+    local targetPlayer = nil
+    local oldCFrame = nil
+
+    tool.Equipped:Connect(function()
+        local mouse = LocalPlayer:GetMouse()
+
+        -- Quando clicar em alguem
+        mouse.Button1Down:Connect(function()
+            if sofaKillSpinning then return end
+
+            local target = mouse.Target
+            if not target then return end
+
+            local character = target:FindFirstAncestorOfClass("Model")
+            if not character then return end
+
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then return end
+
+            local player = Players:GetPlayerFromCharacter(character)
+            if not player or player == LocalPlayer then return end
+
+            targetPlayer = player
+            sofaKillSpinning = true
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local targetHRP = character:FindFirstChild("HumanoidRootPart")
+
+            if not hrp or not targetHRP then
+                sofaKillSpinning = false
+                return
+            end
+
+            oldCFrame = hrp.CFrame
+
+            -- Faz o alvo sentar no sofa
+            seat:Sit(humanoid)
+
+            -- Gira em volta do alvo rapidamente
+            local spinSpeed = 20
+            local spinTime = 0
+            local radius = 8
+
+            spinConnection = RunService.Heartbeat:Connect(function()
+                if not sofaKillSpinning or not targetHRP or not targetHRP.Parent then
+                    if spinConnection then spinConnection:Disconnect() end
+                    sofaKillSpinning = false
+                    return
+                end
+
+                spinTime = spinTime + RunService.Heartbeat.Interval
+                local angle = spinTime * spinSpeed
+
+                -- Posiciona o sofa girando em volta do alvo
+                local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+                hrp.CFrame = CFrame.new(targetHRP.Position + offset, targetHRP.Position)
+                hrp.Velocity = Vector3.new(0, 0, 0)
+
+                -- Se o alvo esta no sofa por 2 segundos, flinga
+                if spinTime > 2 and seat.Occupant then
+                    if spinConnection then spinConnection:Disconnect() end
+
+                    -- Fling MASSIVO para fora do mapa
+                    task.spawn(function()
+                        local flingTime = 0
+                        while flingTime < 1.5 and targetHRP and targetHRP.Parent do
+                            flingTime = flingTime + task.wait()
+                            hrp.CFrame = targetHRP.CFrame
+                            hrp.Velocity = Vector3.new(999999, 999999, 999999)
+                        end
+
+                        -- Reseta posicao
+                        hrp.Velocity = Vector3.new(0, 0, 0)
+                        hrp.CFrame = oldCFrame
+                        sofaKillSpinning = false
+
+                        -- Tenta matar o alvo
+                        if humanoid then
+                            humanoid.Health = 0
+                            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+                        end
+                    end)
+                end
+            end)
+        end)
+    end)
+
+    tool.Unequipped:Connect(function()
+        if spinConnection then
+            spinConnection:Disconnect()
+            spinConnection = nil
+        end
+        sofaKillSpinning = false
+        if oldCFrame and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = oldCFrame
+        end
+    end)
+
+    sofaKillTool = tool
+    tool.Parent = LocalPlayer.Backpack
+    return tool
 end
 
-local function serverKillAll()
+--// ==================== KILL ALL ====================
+
+local function startKillAll()
+    if killAllActive then return end
+    killAllActive = true
+
     Say(";kill all")
+
+    killAllConnection = RunService.Heartbeat:Connect(function()
+        if not killAllActive then 
+            if killAllConnection then killAllConnection:Disconnect() end
+            return 
+        end
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local targetHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                local targetHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                if targetHRP and targetHumanoid then
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local oldCF = hrp.CFrame
+                        hrp.CFrame = targetHRP.CFrame
+                        hrp.Velocity = Vector3.new(500000, 500000, 500000)
+                        task.delay(0.1, function()
+                            if hrp then
+                                hrp.Velocity = Vector3.new(0, 0, 0)
+                                hrp.CFrame = oldCF
+                            end
+                        end)
+                        targetHumanoid.Health = 0
+                        targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end)
 end
 
-local function serverStopKill()
+local function stopKillAll()
+    killAllActive = false
     Say(";unloopkill all")
+    if killAllConnection then
+        killAllConnection:Disconnect()
+        killAllConnection = nil
+    end
 end
 
---// ==================== SERVER-SIDE BRING COMMANDS (SEM NOME) ====================
-
-local function serverBringPlayer(targetPlayer)
-    if not targetPlayer then return end
-    Say(";bring")
-end
-
-local function serverBringAll()
-    Say(";bring all")
-end
-
---// ==================== CLIENT-SIDE FALLBACK ====================
+--// ==================== BRING COM CARRINHO ====================
 
 local function createCart(color)
     local cartModel = Instance.new("Model")
@@ -157,157 +343,172 @@ local function createCart(color)
     return cartModel, seat, bodyPosition, bodyGyro
 end
 
-local function clientBringWithCart(targetPlayer)
+local function bringPlayer(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
-    local targetChar = targetPlayer.Character
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return end
+    Say(";bring")
 
-    local adminChar = LocalPlayer.Character
-    local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
-    if not adminRoot then return end
+    task.delay(0.5, function()
+        local targetChar = targetPlayer.Character
+        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+        if not targetRoot then return end
 
-    local cart, seat, bodyPosition, bodyGyro = createCart(Color3.fromRGB(0, 255, 0))
-    cart.Parent = Workspace
-    cart:SetPrimaryPartCFrame(targetRoot.CFrame * CFrame.new(0, 5, 0))
+        local adminChar = LocalPlayer.Character
+        local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
+        if not adminRoot then return end
 
-    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0)
-    seat:Sit(targetChar.Humanoid)
+        local cart, seat, bodyPosition, bodyGyro = createCart(Color3.fromRGB(0, 255, 0))
+        cart.Parent = Workspace
+        cart:SetPrimaryPartCFrame(targetRoot.CFrame * CFrame.new(0, 5, 0))
 
-    local seatConnection
-    seatConnection = seat.OccupantChanged:Connect(function(occupant)
-        if occupant and occupant.Parent == targetChar then
-            seatConnection:Disconnect()
-            bodyPosition.Position = adminRoot.Position + Vector3.new(0, 5, 0)
-            bodyGyro.CFrame = adminRoot.CFrame
+        targetRoot.CFrame = seat.CFrame
+        seat:Sit(targetChar:FindFirstChildOfClass("Humanoid"))
 
-            task.wait(2)
-            seat.Occupant = nil
-            cart:Destroy()
-        end
-    end)
-    Debris:AddItem(cart, 10)
-end
+        local seatConnection
+        seatConnection = seat.OccupantChanged:Connect(function(occupant)
+            if occupant and occupant.Parent == targetChar then
+                seatConnection:Disconnect()
+                bodyPosition.Position = adminRoot.Position + Vector3.new(0, 5, 0)
+                bodyGyro.CFrame = adminRoot.CFrame
 
-local function clientKillWithCart(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return end
-    local targetChar = targetPlayer.Character
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return end
-
-    local cart, seat, bodyPosition, bodyGyro = createCart(Color3.fromRGB(255, 0, 0))
-    cart.Parent = Workspace
-    cart:SetPrimaryPartCFrame(targetRoot.CFrame * CFrame.new(0, 5, 0))
-
-    targetRoot.CFrame = seat.CFrame * CFrame.new(0, 0, 0)
-    seat:Sit(targetChar.Humanoid)
-
-    local seatConnection
-    seatConnection = seat.OccupantChanged:Connect(function(occupant)
-        if occupant and occupant.Parent == targetChar then
-            seatConnection:Disconnect()
-            bodyPosition.Position = Vector3.new(targetRoot.Position.X, -10000, targetRoot.Position.Z)
-            bodyGyro.CFrame = targetRoot.CFrame
-
-            task.wait(5)
-            seat.Occupant = nil
-            cart:Destroy()
-        end
-    end)
-    Debris:AddItem(cart, 10)
-end
-
-local function clientKillWithFling(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return end
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local targetChar = targetPlayer.Character
-    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
-
-    if not hrp or not targetHRP then return end
-
-    local oldCFrame = hrp.CFrame
-
-    task.spawn(function()
-        local timer = 0
-        local connection
-        connection = RunService.Heartbeat:Connect(function()
-            if not targetHRP or not targetHRP.Parent or timer > 1.5 then
-                connection:Disconnect()
-                hrp.Velocity = Vector3.new(0, 0, 0)
-                hrp.CFrame = oldCFrame
-                return
+                task.wait(2)
+                seat.Occupant = nil
+                cart:Destroy()
             end
-            timer = timer + task.wait()
-            hrp.CFrame = targetHRP.CFrame
-            hrp.Velocity = Vector3.new(500000, 500000, 500000)
         end)
+        Debris:AddItem(cart, 10)
     end)
-
-    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-    if targetHumanoid then
-        targetHumanoid.Health = 0
-        targetHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
-    end
 end
 
-local function startKillAll()
-    if killAllActive then return end
-    killAllActive = true
-    serverKillAll()
-    task.wait(0.5)
-    killAllConnection = RunService.Heartbeat:Connect(function()
-        if not killAllActive then killAllConnection:Disconnect(); return end
+local function bringAll()
+    Say(";bring all")
+    task.delay(0.5, function()
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
-                clientKillWithFling(player)
+                local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                if not targetRoot then continue end
+
+                local adminRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not adminRoot then continue end
+
+                local cart = Instance.new("Model", Workspace)
+                local seat = Instance.new("Seat", cart)
+                seat.Size = Vector3.new(4, 1, 4)
+                seat.Transparency = 1
+                seat.CanCollide = true
+
+                local bp = Instance.new("BodyPosition", seat)
+                bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bp.Position = targetRoot.Position
+
+                task.spawn(function()
+                    local t = 0
+                    while cart.Parent and t < 5 do
+                        targetRoot.CFrame = seat.CFrame
+                        seat:Sit(player.Character:FindFirstChildOfClass("Humanoid"))
+                        if seat.Occupant then break end
+                        t = t + task.wait()
+                    end
+
+                    if seat.Occupant then
+                        bp.Position = adminRoot.Position + adminRoot.CFrame.LookVector * 5
+                        task.wait(1.5)
+                    end
+                    cart:Destroy()
+                end)
             end
         end
     end)
 end
 
-local function stopKillAll()
-    killAllActive = false
-    serverStopKill()
-    if killAllConnection then
-        killAllConnection:Disconnect()
-        killAllConnection = nil
-    end
-end
+--// ==================== BACKROOMS - LABIRINTO REAL ====================
 
---// ==================== BACKROOMS LEVEL 0 - SEM VER O FIM ====================
+local function generateMazeRecursiveBacktracker(width, height)
+    local maze = {}
+    for y = 1, height * 2 + 1 do
+        maze[y] = {}
+        for x = 1, width * 2 + 1 do
+            maze[y][x] = 1
+        end
+    end
+
+    local visited = {}
+    for y = 1, height do
+        visited[y] = {}
+        for x = 1, width do
+            visited[y][x] = false
+        end
+    end
+
+    local directions = {
+        {dx = 0, dy = -1},
+        {dx = 0, dy = 1},
+        {dx = 1, dy = 0},
+        {dx = -1, dy = 0}
+    }
+
+    local function shuffle(t)
+        for i = #t, 2, -1 do
+            local j = math.random(i)
+            t[i], t[j] = t[j], t[i]
+        end
+    end
+
+    local function carve(cx, cy)
+        visited[cy][cx] = true
+        maze[cy * 2][cx * 2] = 0
+
+        local dirs = {table.unpack(directions)}
+        shuffle(dirs)
+
+        for _, dir in ipairs(dirs) do
+            local nx = cx + dir.dx
+            local ny = cy + dir.dy
+
+            if nx >= 1 and nx <= width and ny >= 1 and ny <= height and not visited[ny][nx] then
+                maze[cy * 2 + dir.dy][cx * 2 + dir.dx] = 0
+                carve(nx, ny)
+            end
+        end
+    end
+
+    carve(math.floor(width / 2) + 1, math.floor(height / 2) + 1)
+    return maze
+end
 
 local function executeBackrooms()
     backroomsActive = true
     if backroomsFolder then backroomsFolder:Destroy() end
 
     backroomsFolder = Instance.new("Folder", Workspace)
-    backroomsFolder.Name = "Backrooms_Level0_V15"
+    backroomsFolder.Name = "Backrooms_Level0_V2"
 
     local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
 
-    -- ILUMINACAO EXTREMA - NEVOA DENSISSIMA PARA NAO VER O FIM
-    Lighting.FogColor = Color3.fromRGB(180, 175, 155) -- Névoa amarelada densa
-    Lighting.FogEnd = 40 -- MUITO CURTO! Só ve 40 studs à frente
-    Lighting.FogStart = 5 -- Névoa começa a 5 studs
-    Lighting.Ambient = Color3.fromRGB(100, 95, 75) -- Ambiente escuro
-    Lighting.OutdoorAmbient = Color3.fromRGB(60, 55, 45)
-    Lighting.Brightness = 0.6
+    Lighting.FogColor = Color3.fromRGB(180, 175, 155)
+    Lighting.FogEnd = 35
+    Lighting.FogStart = 2
+    Lighting.Ambient = Color3.fromRGB(90, 85, 65)
+    Lighting.OutdoorAmbient = Color3.fromRGB(50, 45, 35)
+    Lighting.Brightness = 0.5
     Lighting.ColorShift_Bottom = Color3.fromRGB(200, 190, 160)
     Lighting.ColorShift_Top = Color3.fromRGB(220, 210, 180)
 
-    -- Color Correction para tom amarelado opressivo
     local cc = Instance.new("ColorCorrectionEffect", Lighting)
-    cc.Name = "BackroomsCC_V15"
-    cc.TintColor = Color3.fromRGB(255, 240, 180) -- Tom amarelado forte
-    cc.Saturation = -0.2 -- Desaturado
-    cc.Contrast = 0.1
+    cc.Name = "BackroomsCC_V2"
+    cc.TintColor = Color3.fromRGB(255, 240, 180)
+    cc.Saturation = -0.3
+    cc.Contrast = 0.05
     cc.Brightness = -0.05
 
-    -- Blur sutil para sensação de claustrofobia
     local blur = Instance.new("BlurEffect", Lighting)
     blur.Name = "BackroomsBlur"
-    blur.Size = 2
+    blur.Size = 3
+
+    local mazeWidth = 25
+    local mazeHeight = 25
+    local cellSize = 12
+    local wallHeight = 25
+    local maze = generateMazeRecursiveBacktracker(mazeWidth, mazeHeight)
 
     local function createPart(pos, size, color, material, name)
         local p = Instance.new("Part", backroomsFolder)
@@ -323,143 +524,79 @@ local function executeBackrooms()
         return p
     end
 
-    -- MAZE GRANDE (30x30) para nao ver o fim
-    local mazeGridSize = 30
-    local cellSize = 14
-    local wallHeight = 30 -- PAREDES ALTAS! 30 studs
-    local wallThickness = 1.5
-    local halfWallThickness = wallThickness / 2
+    local wallColor = Color3.fromRGB(215, 200, 145)
+    local carpetColor = Color3.fromRGB(160, 140, 105)
+    local ceilingColor = Color3.fromRGB(200, 195, 185)
+    local baseboardColor = Color3.fromRGB(130, 115, 75)
 
-    local startX = basePos.X - (mazeGridSize * cellSize / 2)
-    local startZ = basePos.Z - (mazeGridSize * cellSize / 2)
+    for my = 1, #maze do
+        for mx = 1, #maze[my] do
+            local worldX = basePos.X + (mx - 1) * cellSize - (mazeWidth * cellSize)
+            local worldZ = basePos.Z + (my - 1) * cellSize - (mazeHeight * cellSize)
 
-    -- CORES FIEIS AO LEVEL 0
-    local wallColor = Color3.fromRGB(215, 200, 145) -- Mono-yellow desbotado
-    local carpetColor = Color3.fromRGB(160, 140, 105) -- Carpete úmido marrom-amarelado
-    local ceilingColor = Color3.fromRGB(195, 190, 180) -- Teto branco-acinzentado
-    local baseboardColor = Color3.fromRGB(130, 115, 75) -- Rodapé marrom escuro
+            if maze[my][mx] == 1 then
+                local wall = createPart(
+                    Vector3.new(worldX, basePos.Y + wallHeight/2, worldZ),
+                    Vector3.new(cellSize, wallHeight, cellSize),
+                    wallColor, Enum.Material.SmoothPlastic, "Wall_" .. mx .. "_" .. my
+                )
 
-    -- CHAO (carpete úmido)
-    local floor = createPart(basePos - Vector3.new(0, 0.5, 0), 
-        Vector3.new(mazeGridSize * cellSize, 0.8, mazeGridSize * cellSize), 
-        carpetColor, Enum.Material.Fabric, "Floor")
-    floor.CanCollide = true
-
-    -- TELO (teto alto)
-    local ceiling = createPart(basePos + Vector3.new(0, wallHeight, 0), 
-        Vector3.new(mazeGridSize * cellSize, 0.5, mazeGridSize * cellSize), 
-        ceilingColor, Enum.Material.Plastic, "Ceiling")
-
-    -- Paredes externas ALTAS
-    createPart(Vector3.new(basePos.X, basePos.Y + wallHeight/2, startZ - halfWallThickness), 
-        Vector3.new(mazeGridSize * cellSize + wallThickness, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallN")
-    createPart(Vector3.new(basePos.X, basePos.Y + wallHeight/2, startZ + mazeGridSize * cellSize + halfWallThickness), 
-        Vector3.new(mazeGridSize * cellSize + wallThickness, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallS")
-    createPart(Vector3.new(startX - halfWallThickness, basePos.Y + wallHeight/2, basePos.Z), 
-        Vector3.new(wallThickness, wallHeight, mazeGridSize * cellSize + wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallW")
-    createPart(Vector3.new(startX + mazeGridSize * cellSize + halfWallThickness, basePos.Y + wallHeight/2, basePos.Z), 
-        Vector3.new(wallThickness, wallHeight, mazeGridSize * cellSize + wallThickness), wallColor, Enum.Material.SmoothPlastic, "WallE")
-
-    -- Geracao de paredes internas
-    for x = 0, mazeGridSize - 1 do
-        for z = 0, mazeGridSize - 1 do
-            local currentCellX = startX + x * cellSize + cellSize / 2
-            local currentCellZ = startZ + z * cellSize + cellSize / 2
-
-            -- Paredes horizontais
-            if z < mazeGridSize - 1 then
-                if math.random() > 0.4 then
-                    local gapSize = cellSize * 0.4
-                    local wallSize = (cellSize - gapSize) / 2
-
-                    if wallSize > 0.5 then
-                        local w1 = createPart(
-                            Vector3.new(currentCellX - cellSize/2 + wallSize/2, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), 
-                            Vector3.new(wallSize, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic)
-                        createPart(
-                            Vector3.new(currentCellX - cellSize/2 + wallSize/2, basePos.Y + 0.3, currentCellZ + cellSize/2 - halfWallThickness), 
-                            Vector3.new(wallSize, 0.6, wallThickness + 0.1), baseboardColor, Enum.Material.Wood)
-
-                        local w2 = createPart(
-                            Vector3.new(currentCellX + cellSize/2 - wallSize/2, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - halfWallThickness), 
-                            Vector3.new(wallSize, wallHeight, wallThickness), wallColor, Enum.Material.SmoothPlastic)
-                        createPart(
-                            Vector3.new(currentCellX + cellSize/2 - wallSize/2, basePos.Y + 0.3, currentCellZ + cellSize/2 - halfWallThickness), 
-                            Vector3.new(wallSize, 0.6, wallThickness + 0.1), baseboardColor, Enum.Material.Wood)
-                    end
-                end
-            end
-
-            -- Paredes verticais
-            if x < mazeGridSize - 1 then
-                if math.random() > 0.4 then
-                    local gapSize = cellSize * 0.4
-                    local wallSize = (cellSize - gapSize) / 2
-
-                    if wallSize > 0.5 then
-                        local w3 = createPart(
-                            Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ - cellSize/2 + wallSize/2), 
-                            Vector3.new(wallThickness, wallHeight, wallSize), wallColor, Enum.Material.SmoothPlastic)
-                        createPart(
-                            Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + 0.3, currentCellZ - cellSize/2 + wallSize/2), 
-                            Vector3.new(wallThickness + 0.1, 0.6, wallSize), baseboardColor, Enum.Material.Wood)
-
-                        local w4 = createPart(
-                            Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + wallHeight/2, currentCellZ + cellSize/2 - wallSize/2), 
-                            Vector3.new(wallThickness, wallHeight, wallSize), wallColor, Enum.Material.SmoothPlastic)
-                        createPart(
-                            Vector3.new(currentCellX + cellSize/2 - halfWallThickness, basePos.Y + 0.3, currentCellZ + cellSize/2 - wallSize/2), 
-                            Vector3.new(wallThickness + 0.1, 0.6, wallSize), baseboardColor, Enum.Material.Wood)
-                    end
-                end
-            end
-
-            -- LUZES FLUORESCENTES (poucas, distantes, piscando)
-            if math.random() > 0.65 then
-                local lightFixture = createPart(
-                    Vector3.new(currentCellX, basePos.Y + wallHeight - 0.3, currentCellZ), 
-                    Vector3.new(4, 0.4, 1.5), 
-                    Color3.fromRGB(240, 235, 220), Enum.Material.Plastic, "LightFixture")
-
-                local lightTube = createPart(
-                    Vector3.new(currentCellX, basePos.Y + wallHeight - 0.5, currentCellZ), 
-                    Vector3.new(3.5, 0.1, 1), 
-                    Color3.fromRGB(255, 250, 230), Enum.Material.Neon, "LightTube")
-
-                local light = Instance.new("PointLight", lightTube)
-                light.Brightness = 0.8
-                light.Range = 15 -- Alcance curto
-                light.Color = Color3.fromRGB(255, 248, 220)
-                light.Shadows = true
-
-                -- Piscar aleatorio
-                task.spawn(function()
-                    while backroomsActive and lightTube.Parent do
-                        task.wait(math.random(5, 20))
-                        if math.random() > 0.6 then
-                            light.Enabled = false
-                            lightTube.Material = Enum.Material.SmoothPlastic
-                            lightTube.Color = Color3.fromRGB(80, 80, 80)
-                            task.wait(math.random(0.1, 0.8))
-                            light.Enabled = true
-                            lightTube.Material = Enum.Material.Neon
-                            lightTube.Color = Color3.fromRGB(255, 250, 230)
-                        end
-                    end
-                end)
-            end
-
-            -- TOMADAS (detalhe raro)
-            if math.random() > 0.9 then
                 createPart(
-                    Vector3.new(currentCellX - cellSize/2 + 0.1, basePos.Y + wallHeight/2, currentCellZ), 
-                    Vector3.new(0.1, 1.2, 0.8), 
-                    Color3.fromRGB(220, 220, 210), Enum.Material.Plastic, "Outlet")
+                    Vector3.new(worldX, basePos.Y + 0.3, worldZ),
+                    Vector3.new(cellSize, 0.6, cellSize + 0.1),
+                    baseboardColor, Enum.Material.Wood, "Baseboard_" .. mx .. "_" .. my
+                )
+            else
+                createPart(
+                    Vector3.new(worldX, basePos.Y - 0.5, worldZ),
+                    Vector3.new(cellSize, 0.8, cellSize),
+                    carpetColor, Enum.Material.Fabric, "Floor_" .. mx .. "_" .. my
+                )
+
+                createPart(
+                    Vector3.new(worldX, basePos.Y + wallHeight, worldZ),
+                    Vector3.new(cellSize, 0.5, cellSize),
+                    ceilingColor, Enum.Material.Plastic, "Ceiling_" .. mx .. "_" .. my
+                )
+
+                if math.random() > 0.75 then
+                    local lightFixture = createPart(
+                        Vector3.new(worldX, basePos.Y + wallHeight - 0.3, worldZ),
+                        Vector3.new(4, 0.4, 1.5),
+                        Color3.fromRGB(240, 235, 220), Enum.Material.Plastic, "LightFixture"
+                    )
+
+                    local lightTube = createPart(
+                        Vector3.new(worldX, basePos.Y + wallHeight - 0.5, worldZ),
+                        Vector3.new(3.5, 0.1, 1),
+                        Color3.fromRGB(255, 250, 230), Enum.Material.Neon, "LightTube"
+                    )
+
+                    local light = Instance.new("PointLight", lightTube)
+                    light.Brightness = 0.8
+                    light.Range = 12
+                    light.Color= Color3.fromRGB(255, 248, 220)
+                    light.Shadows = true
+
+                    task.spawn(function()
+                        while backroomsActive and lightTube.Parent do
+                            task.wait(math.random(5, 20))
+                            if math.random() > 0.6 then
+                                light.Enabled = false
+                                lightTube.Material = Enum.Material.SmoothPlastic
+                                lightTube.Color = Color3.fromRGB(80, 80, 80)
+                                task.wait(math.random(0.1, 0.5))
+                                light.Enabled = true
+                                lightTube.Material = Enum.Material.Neon
+                                lightTube.Color = Color3.fromRGB(255, 250, 230)
+                            end
+                        end
+                    end)
+                end
             end
         end
     end
 
-    -- Som ambiente (hum das luzes)
     local hum = Instance.new("Sound", backroomsFolder)
     hum.SoundId = "rbxassetid://9070440337"
     hum.Looped = true
@@ -467,15 +604,8 @@ local function executeBackrooms()
     hum.PlaybackSpeed = 0.85
     hum:Play()
 
-    -- Som de carpete úmido
-    local carpetSound = Instance.new("Sound", backroomsFolder)
-    carpetSound.SoundId = "rbxassetid://1566642329"
-    carpetSound.Looped = true
-    carpetSound.Volume = 0.08
-    carpetSound:Play()
-
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(basePos + Vector3.new(0, 3, 0))
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(basePos + Vector3.new(0, 5, 0))
     end
 end
 
@@ -491,8 +621,8 @@ local function exitBackrooms()
     Lighting.ColorShift_Bottom = Color3.fromRGB(0, 0, 0)
     Lighting.ColorShift_Top = Color3.fromRGB(0, 0, 0)
 
-    if Lighting:FindFirstChild("BackroomsCC_V15") then
-        Lighting.BackroomsCC_V15:Destroy()
+    if Lighting:FindFirstChild("BackroomsCC_V2") then
+        Lighting.BackroomsCC_V2:Destroy()
     end
     if Lighting:FindFirstChild("BackroomsBlur") then
         Lighting.BackroomsBlur:Destroy()
@@ -503,145 +633,225 @@ local function exitBackrooms()
     end
 end
 
---// ==================== ANTI-TOOLS/KICK/BAN (FUNCIONANDO) ====================
+--// ==================== AURA DE CADEIRAS REAIS ====================
+
+local auraActive = false
+local auraConnection = nil
+local auraParts = {}
+
+local function startAura()
+    if auraActive then return end
+    auraActive = true
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    local numChairs = 8
+    local radius = 8
+
+    for i = 1, numChairs do
+        local chair = Instance.new("Seat")
+        chair.Name = "AuraChair_" .. i
+        chair.Size = Vector3.new(3, 1, 3)
+        chair.BrickColor = BrickColor.new("Bright red")
+        chair.Material = Enum.Material.SmoothPlastic
+        chair.Anchored = false
+        chair.CanCollide = true
+        chair.Parent = Workspace
+
+        local back = Instance.new("Part")
+        back.Name = "AuraChairBack_" .. i
+        back.Size = Vector3.new(3, 3, 0.5)
+        back.BrickColor = BrickColor.new("Bright red")
+        back.Material = Enum.Material.SmoothPlastic
+        back.CanCollide = true
+        back.Parent = Workspace
+
+        local backWeld = Instance.new("WeldConstraint", back)
+        backWeld.Part0 = chair
+        backWeld.Part1 = back
+        back.CFrame = chair.CFrame * CFrame.new(0, 1.5, 1.2)
+
+        for _, legPos in ipairs({
+            Vector3.new(-1.2, -0.5, -1.2),
+            Vector3.new(1.2, -0.5, -1.2),
+            Vector3.new(-1.2, -0.5, 1.2),
+            Vector3.new(1.2, -0.5, 1.2)
+        }) do
+            local leg = Instance.new("Part")
+            leg.Name = "AuraChairLeg_" .. i
+            leg.Size = Vector3.new(0.3, 2, 0.3)
+            leg.BrickColor = BrickColor.new("Dark grey")
+            leg.Material = Enum.Material.Metal
+            leg.CanCollide = true
+            leg.Parent = Workspace
+
+            local legWeld = Instance.new("WeldConstraint", leg)
+            legWeld.Part0 = chair
+            legWeld.Part1 = leg
+            leg.CFrame = chair.CFrame * CFrame.new(legPos)
+        end
+
+        local bp = Instance.new("BodyPosition", chair)
+        bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bp.D = 100
+        bp.P = 10000
+
+        local bg = Instance.new("BodyGyro", chair)
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bg.D = 100
+        bg.P = 10000
+
+        table.insert(auraParts, {chair = chair, bp = bp, bg = bg, back = back})
+    end
+
+    auraConnection = RunService.Heartbeat:Connect(function()
+        if not auraActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            stopAura()
+            return
+        end
+        local root = LocalPlayer.Character.HumanoidRootPart
+        local t = tick() * 1.5
+
+        for i, data in ipairs(auraParts) do
+            local angle = (i / numChairs) * math.pi * 2 + t
+            local x = math.cos(angle) * radius
+            local z = math.sin(angle) * radius
+            local targetPos = (root.CFrame * CFrame.new(x, 0, z)).Position
+            data.bp.Position = targetPos
+            data.bg.CFrame = CFrame.new(data.chair.Position, root.Position)
+
+            if data.back then
+                data.back.CFrame = data.chair.CFrame * CFrame.new(0, 1.5, 1.2)
+            end
+        end
+    end)
+
+    warn("Aura de cadeiras REAL ativada!")
+end
+
+local function stopAura()
+    if not auraActive then return end
+    auraActive = false
+    if auraConnection then
+        auraConnection:Disconnect()
+        auraConnection = nil
+    end
+    for _, data in ipairs(auraParts) do
+        if typeof(data) == "table" then
+            if data.chair then data.chair:Destroy() end
+            if data.back then data.back:Destroy() end
+        end
+    end
+    auraParts = {}
+    warn("Aura de cadeiras desativada.")
+end
+
+--// ==================== ANTI-TOOLS/KICK/BAN ====================
 
 local function setupAntiTools()
-    -- Limpa conexoes antigas
     for _, conn in ipairs(antiToolsConnections) do
         if conn then conn:Disconnect() end
     end
     antiToolsConnections = {}
 
-    -- Anti-tools na mochila
-    local conn1 = LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+    local function checkAndDestroyTool(child)
         if antiToolsEnabled and child:IsA("Tool") then
-            warn("[ANTI-TOOLS] Ferramenta detectada na mochila: " .. child.Name .. " - DESTRUINDO")
+            warn("[ANTI-TOOLS] Ferramenta detectada: " .. child.Name .. " - DESTRUINDO")
             child:Destroy()
+            return true
         end
-    end)
+        return false
+    end
+
+    local conn1 = LocalPlayer.Backpack.ChildAdded:Connect(checkAndDestroyTool)
     table.insert(antiToolsConnections, conn1)
 
-    -- Anti-tools no personagem
-    local conn2 = LocalPlayer.CharacterAdded:Connect(function(char)
-        local conn3 = char.ChildAdded:Connect(function(child)
-            if antiToolsEnabled and child:IsA("Tool") then
-                warn("[ANTI-TOOLS] Ferramenta detectada no personagem: " .. child.Name .. " - DESTRUINDO")
-                child:Destroy()
-            end
-        end)
-        table.insert(antiToolsConnections, conn3)
-    end)
-    table.insert(antiToolsConnections, conn2)
-
-    -- Verifica ferramentas existentes
     if LocalPlayer.Character then
+        local conn2 = LocalPlayer.Character.ChildAdded:Connect(checkAndDestroyTool)
+        table.insert(antiToolsConnections, conn2)
+
         for _, child in ipairs(LocalPlayer.Character:GetChildren()) do
-            if antiToolsEnabled and child:IsA("Tool") then
-                warn("[ANTI-TOOLS] Ferramenta existente removida: " .. child.Name)
-                child:Destroy()
-            end
+            checkAndDestroyTool(child)
         end
     end
+
+    local conn3 = LocalPlayer.CharacterAdded:Connect(function(char)
+        local conn4 = char.ChildAdded:Connect(checkAndDestroyTool)
+        table.insert(antiToolsConnections, conn4)
+
+        for _, child in ipairs(char:GetChildren()) do
+            checkAndDestroyTool(child)
+        end
+    end)
+    table.insert(antiToolsConnections, conn3)
+
     for _, child in ipairs(LocalPlayer.Backpack:GetChildren()) do
-        if antiToolsEnabled and child:IsA("Tool") then
-            warn("[ANTI-TOOLS] Ferramenta existente removida: " .. child.Name)
-            child:Destroy()
-        end
+        checkAndDestroyTool(child)
     end
+
+    warn("[ANTI-TOOLS] Monitoramento ativado")
 end
 
 local function setupAntiKick()
-    -- Hook em RemoteEvent.FireServer para detectar kicks
-    local mt = getrawmetatable and getrawmetatable(game) or nil
-    if mt and setreadonly then
-        setreadonly(mt, false)
-        local oldNamecall = mt.__namecall
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if antiKickEnabled and method == "FireServer" then
-                local args = {...}
-                if args[1] and type(args[1]) == "string" then
-                    local lowerArg = args[1]:lower()
-                    if lowerArg:find("kick") or lowerArg:find("removeplayer") then
-                        warn("[ANTI-KICK] Tentativa de kick detectada e BLOQUEADA!")
-                        return nil
-                    end
+    if not getrawmetatable or not setreadonly then
+        warn("[ANTI-KICK] Executor nao suporta metatables")
+        return
+    end
+
+    local mt = getrawmetatable(game)
+    if not mt then return end
+
+    setreadonly(mt, false)
+    local oldNamecall = mt.__namecall
+
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if antiKickEnabled and method == "FireServer" then
+            local args = {...}
+            if args[1] and type(args[1]) == "string" then
+                local lowerArg = args[1]:lower()
+                if lowerArg:find("kick") or lowerArg:find("removeplayer") or lowerArg:find("eject") then
+                    warn("[ANTI-KICK] Tentativa de kick BLOQUEADA: " .. args[1])
+                    return nil
                 end
             end
-            return oldNamecall(self, ...)
-        end)
-        setreadonly(mt, true)
-        warn("[ANTI-KICK] Hook ativado via metatable")
-    else
-        -- Fallback: monitora RemoteEvents comuns
-        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                local conn = obj.OnClientEvent:Connect(function(...)
-                    if antiKickEnabled then
-                        local args = {...}
-                        for _, arg in ipairs(args) do
-                            if type(arg) == "string" and (arg:lower():find("kick") or arg:lower():find("removeplayer")) then
-                                warn("[ANTI-KICK] Evento de kick detectado e BLOQUEADO")
-                                return nil
-                            end
-                        end
-                    end
-                end)
-                table.insert(antiToolsConnections, conn)
-            end
         end
-        warn("[ANTI-KICK] Monitoramento de RemoteEvents ativado")
-    end
+        return oldNamecall(self, ...)
+    end)
+
+    setreadonly(mt, true)
+    warn("[ANTI-KICK] Hook ativado")
 end
 
 local function setupAntiBan()
-    local mt = getrawmetatable and getrawmetatable(game) or nil
-    if mt and setreadonly then
-        setreadonly(mt, false)
-        local oldNamecall = mt.__namecall
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if antiBanEnabled and method == "FireServer" then
-                local args = {...}
-                if args[1] and type(args[1]) == "string" then
-                    local lowerArg = args[1]:lower()
-                    if lowerArg:find("ban") or lowerArg:find("banplayer") or lowerArg:find("banish") then
-                        warn("[ANTI-BAN] Tentativa de ban detectada e BLOQUEADA!")
-                        return nil
-                    end
+    if not getrawmetatable or not setreadonly then
+        warn("[ANTI-BAN] Executor nao suporta metatables")
+        return
+    end
+
+    local mt = getrawmetatable(game)
+    if not mt then return end
+
+    setreadonly(mt, false)
+    local oldNamecall = mt.__namecall
+
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if antiBanEnabled and method == "FireServer" then
+            local args = {...}
+            if args[1] and type(args[1]) == "string" then
+                local lowerArg = args[1]:lower()
+                if lowerArg:find("ban") or lowerArg:find("banplayer") or lowerArg:find("banish") or lowerArg:find("permaban") then
+                    warn("[ANTI-BAN] Tentativa de ban BLOQUEADA: " .. args[1])
+                    return nil
                 end
             end
-            return oldNamecall(self, ...)
-        end)
-        setreadonly(mt, true)
-        warn("[ANTI-BAN] Hook ativado via metatable")
-    else
-        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                local conn = obj.OnClientEvent:Connect(function(...)
-                    if antiBanEnabled then
-                        local args = {...}
-                        for _, arg in ipairs(args) do
-                            if type(arg) == "string" and arg:lower():find("ban") then
-                                warn("[ANTI-BAN] Evento de ban detectado e BLOQUEADO")
-                                return nil
-                            end
-                        end
-                    end
-                end)
-                table.insert(antiToolsConnections, conn)
-            end
         end
-        warn("[ANTI-BAN] Monitoramento de RemoteEvents ativado")
-    end
-end
+        return oldNamecall(self, ...)
+    end)
 
-local function setupAntiAdmin()
-    -- Anti-tools + Anti-kick + Anti-ban combinados
-    setupAntiTools()
-    setupAntiKick()
-    setupAntiBan()
-    warn("[ANTI-ADMIN] Todas as protecoes ativadas")
+    setreadonly(mt, true)
+    warn("[ANTI-BAN] Hook ativado")
 end
 
 --// ==================== OUTRAS FUNCOES ====================
@@ -888,82 +1098,6 @@ local function executeTornado(targetPlayer)
     end)
 end
 
-local auraActive = false
-local auraConnection = nil
-local auraParts = {}
-
-local function startAura()
-    if auraActive then return end
-    auraActive = true
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
-    local numChairs = 6
-    local radius = 7
-
-    for i = 1, numChairs do
-        local chair = Instance.new("Seat")
-        chair.Size = Vector3.new(3, 1, 3)
-        chair.BrickColor = BrickColor.new("Bright red")
-        chair.Anchored = false
-        chair.CanCollide = true
-        chair.Parent = Workspace
-
-        local back = Instance.new("Part", chair)
-        back.Size = Vector3.new(3, 3, 0.5)
-        back.BrickColor = BrickColor.new("Bright red")
-        back.CanCollide = true
-
-        local weld = Instance.new("WeldConstraint", chair)
-        weld.Part0 = chair
-        weld.Part1 = back
-        back.CFrame = chair.CFrame * CFrame.new(0, 1.5, 1.2)
-
-        local bp = Instance.new("BodyPosition", chair)
-        bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-
-        local bg = Instance.new("BodyGyro", chair)
-        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-
-        table.insert(auraParts, {chair = chair, bp = bp, bg = bg})
-    end
-
-    auraConnection = RunService.Heartbeat:Connect(function()
-        if not auraActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            stopAura()
-            return
-        end
-        local root = LocalPlayer.Character.HumanoidRootPart
-        local t = tick() * 2
-
-        for i, data in ipairs(auraParts) do
-            local angle = (i / numChairs) * math.pi * 2 + t
-            local x = math.cos(angle) * radius
-            local z = math.sin(angle) * radius
-            data.bp.Position = (root.CFrame * CFrame.new(x, 0, z)).Position
-            data.bg.CFrame = CFrame.new(data.chair.Position, root.Position)
-        end
-    end)
-end
-
-local function stopAura()
-    if not auraActive then return end
-    auraActive = false
-    if auraConnection then
-        auraConnection:Disconnect()
-        auraConnection = nil
-    end
-    for _, data in ipairs(auraParts) do
-        if typeof(data) == "table" and data.chair then
-            data.chair:Destroy()
-        elseif typeof(data) == "Instance" then
-            data:Destroy()
-        end
-    end
-    auraParts = {}
-    warn("Aura de cadeiras desativada.")
-end
-
 --// Interface WindUI
 local ok, WindUILib = pcall(function()
     return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -971,7 +1105,7 @@ end)
 
 if ok and WindUILib then
     local Window = WindUILib:CreateWindow({
-        Title = "Painel Admin V15",
+        Title = "Painel Admin V2",
         Icon = "star",
         Author = "by: Fitch team",
         Folder = "Trix - Admins",
@@ -998,68 +1132,71 @@ if ok and WindUILib then
     end
 
     local SectionActions = TabMain:Section({ Title = "Acoes Principais", Icon = "user-cog", Opened = true })
+
     local DropdownMain = SectionActions:Dropdown({
         Title = "Selecionar Jogador",
         Values = getPlayersList(),
         Callback = function(opt) TargetName = opt end
     })
 
-    -- ;kill player (envia ";kill" UMA VEZ, sem nome)
     SectionActions:Button({
-        Title = ";kill player",
-        Desc = "Envia ';kill' no chat (server-side) + fallback carrinho",
-        Callback = function() 
-            local t = findTarget(TargetName) 
-            if t then 
-                serverKillPlayer(t)
-                task.wait(0.5)
-                clientKillWithCart(t)
-            end 
+        Title = "Atualizar Lista",
+        Desc = "Atualiza a lista de jogadores no dropdown",
+        Callback = function()
+            local l = getPlayersList()
+            DropdownMain:SetValues(l)
+            warn("Lista de jogadores atualizada! " .. #l .. " jogadores encontrados.")
         end
     })
 
-    -- ;kill all (envia ";kill all" UMA VEZ)
+    SectionActions:Button({
+        Title = ";kill player",
+        Desc = "Sofa na mao! Clica na cabeca do alvo, gira e flinga para fora do mapa",
+        Callback = function() 
+            createSofaKillTool()
+            warn("Sofa Killer equipado! Clique na cabeca do alvo para matar.")
+        end
+    })
+
     SectionActions:Button({
         Title = ";kill all",
-        Desc = "Envia ';kill all' no chat (server-side) + fallback",
+        Desc = "Mata todos os jogadores (server-side + fling)",
         Callback = function() 
-            serverKillAll()
-            task.wait(0.5)
             startKillAll()
         end
     })
 
     SectionActions:Button({
         Title = ";stop kill",
-        Desc = "Envia ';unloopkill all' no chat",
+        Desc = "Para o kill all",
         Callback = function() stopKillAll() end
     })
 
-    SectionActions:Button({Title = ";tp player", Desc = "Teleporta instantaneamente para o jogador", Callback = function() local t = findTarget(TargetName) if t and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then t.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) end end})
-    SectionActions:Button({Title = ";bang", Desc = "Inicia a animacao bang no alvo", Callback = function() local t = findTarget(TargetName) if t then Say(";bang") if bangLoop then bangLoop:Disconnect() end bangLoop = RunService.Heartbeat:Connect(function() if t.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.1) * CFrame.new(0, 0, math.sin(tick() * 25) * 0.8) else if bangLoop then bangLoop:Disconnect() bangLoop = nil end end end) end end})
-    SectionActions:Button({Title = ";unbang", Desc = "Para a animacao bang", Callback = function() Say(";unbang") if bangLoop then bangLoop:Disconnect() bangLoop = nil end end})
+    SectionActions:Button({Title = ";tp player", Desc = "Teleporta para o jogador", Callback = function() local t = findTarget(TargetName) if t and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) end end})
+    SectionActions:Button({Title = ";bang", Desc = "Inicia animacao bang", Callback = function() local t = findTarget(TargetName) if t then Say(";bang") if bangLoop then bangLoop:Disconnect() end bangLoop = RunService.Heartbeat:Connect(function() if t.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.1) * CFrame.new(0, 0, math.sin(tick() * 25) * 0.8) else if bangLoop then bangLoop:Disconnect() bangLoop = nil end end end) end end})
+    SectionActions:Button({Title = ";unbang", Desc = "Para animacao bang", Callback = function() Say(";unbang") if bangLoop then bangLoop:Disconnect() bangLoop = nil end end})
     SectionActions:Button({
         Title = ";Crash player",
-        Desc = "Tenta crachar o jogo do jogador selecionado.",
+        Desc = "Tenta crachar o jogador selecionado",
         Callback = function() local t = findTarget(TargetName) if t then executeCrash(t) end end
-  })
+    })
     SectionActions:Button({
         Title = ";tornado player",
-        Desc = "Cria um tornado ao redor do jogador selecionado.",
+        Desc = "Cria tornado ao redor do jogador",
         Callback = function() local t = findTarget(TargetName) if t then executeTornado(t) end end
     })
     SectionActions:Button({
         Title = ";aura",
-        Desc = "Cria uma aura de cadeiras giratorias ao seu redor.",
+        Desc = "Cria aura de cadeiras REAIS (outros jogadores veem e sentam)",
         Callback = function() startAura() end
     })
     SectionActions:Button({
         Title = ";stop aura",
-        Desc = "Para a aura de cadeiras.",
+        Desc = "Para a aura de cadeiras",
         Callback = function() stopAura() end
     })
-    SectionActions:Button({Title = ";view", Desc = "Observa a camera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view") viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
-    SectionActions:Button({Title = ";unview", Desc = "Retorna a camera para voce", Callback = function() Say(";unview") if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
+    SectionActions:Button({Title = ";view", Desc = "Observa camera do jogador", Callback = function() local t = findTarget(TargetName) if t then Say(";view") viewingTarget = t; if viewConnection then viewConnection:Disconnect() end viewConnection = RunService.RenderStepped:Connect(function() if viewingTarget and viewingTarget.Character then Camera.CameraSubject = viewingTarget.Character.Humanoid else if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end end) end end})
+    SectionActions:Button({Title = ";unview", Desc = "Retorna camera", Callback = function() Say(";unview") if viewConnection then viewConnection:Disconnect() end Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
 
     local SectionVisTarget = TabVisuals:Section({ Title = "Alvo do Efeito", Icon = "user", Opened = true })
     local DropdownVis = SectionVisTarget:Dropdown({
@@ -1068,44 +1205,44 @@ if ok and WindUILib then
         Callback = function(opt) TargetName = opt end
     })
 
-    -- ;bring player (envia ";bring" UMA VEZ, sem nome)
+    SectionVisTarget:Button({
+        Title = "Atualizar Lista",
+        Desc = "Atualiza a lista de jogadores",
+        Callback = function()
+            local l = getPlayersList()
+            DropdownVis:SetValues(l)
+            warn("Lista atualizada! " .. #l .. " jogadores.")
+        end
+    })
+
     SectionVisTarget:Button({
         Title = ";bring player",
-        Desc = "Envia ';bring' no chat (server-side) + fallback carrinho",
+        Desc = "Puxa jogador com carrinho (server-side + fallback)",
         Callback = function() 
             local t = findTarget(TargetName) 
             if t then 
-                serverBringPlayer(t)
-                task.wait(0.5)
-                clientBringWithCart(t)
+                bringPlayer(t)
             end 
         end
     })
 
-    -- ;bring ALL (envia ";bring all" UMA VEZ)
     SectionVisTarget:Button({
         Title = ";bring ALL",
-        Desc = "Envia ';bring all' no chat (server-side) + fallback",
+        Desc = "Puxa TODOS os jogadores",
         Callback = function() 
-            serverBringAll()
-            task.wait(0.5)
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    clientBringWithCart(player)
-                end
-            end
+            bringAll()
         end
     })
 
     local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
     SectionAmb:Button({
         Title = "Entrar no Backrooms (Level 0)", 
-        Desc = "Sem ver o fim! Paredes 30 studs, nevoa densa, luzes fluorescentes", 
+        Desc = "Labirinto REAL com Recursive Backtracker! Sem ver o fim!", 
         Callback = function() executeBackrooms() end
     })
     SectionAmb:Button({
         Title = "Sair do Backrooms", 
-        Desc = "Reseta o ambiente e te tira de la", 
+        Desc = "Reseta ambiente e te tira de la", 
         Callback = function() exitBackrooms() end
     })
 
@@ -1122,17 +1259,16 @@ if ok and WindUILib then
         end
     })
 
-    -- Seção de Seguranca - ANTI-TOOLS/KICK/BAN FUNCIONANDO
     local SectionSecurity = TabSecurity:Section({ Title = "Protecoes e Controles", Icon = "lock", Opened = true })
 
     SectionSecurity:Toggle({
         Title = "Anti-Tools",
-        Desc = "Destroi automaticamente qualquer ferramenta que voce receba (FUNCIONA!)",
+        Desc = "Destroi automaticamente qualquer ferramenta recebida",
         Callback = function(v)
             antiToolsEnabled = v
             if v then
                 setupAntiTools()
-                warn("[ANTI-TOOLS] ATIVADO - Todas as ferramentas serao destruidas")
+                warn("[ANTI-TOOLS] ATIVADO")
             else
                 for _, conn in ipairs(antiToolsConnections) do
                     if conn then conn:Disconnect() end
@@ -1145,45 +1281,43 @@ if ok and WindUILib then
 
     SectionSecurity:Toggle({
         Title = "Anti-Kick",
-        Desc = "Bloqueia tentativas de kick via RemoteEvents (FUNCIONA!)",
+        Desc = "Bloqueia tentativas de kick via RemoteEvents",
         Callback = function(v)
             antiKickEnabled = v
             if v then
                 setupAntiKick()
-                warn("[ANTI-KICK] ATIVADO - Kicks serao bloqueados")
             else
-                antiKickEnabled = false
-                warn("[ANTI-KICK] DESATIVADO (pode exigir reinicio)")
+                warn("[ANTI-KICK] DESATIVADO (requer reinicio)")
             end
         end
     })
 
     SectionSecurity:Toggle({
         Title = "Anti-Ban",
-        Desc = "Bloqueia tentativas de ban via RemoteEvents (FUNCIONA!)",
+        Desc = "Bloqueia tentativas de ban via RemoteEvents",
         Callback = function(v)
             antiBanEnabled = v
             if v then
                 setupAntiBan()
-                warn("[ANTI-BAN] ATIVADO - Bans serao bloqueados")
             else
-                antiBanEnabled = false
-                warn("[ANTI-BAN] DESATIVADO (pode exigir reinicio)")
+                warn("[ANTI-BAN] DESATIVADO (requer reinicio)")
             end
         end
     })
 
     SectionSecurity:Toggle({
         Title = "Anti-Admin (Completo)",
-        Desc = "Ativa Anti-Tools + Anti-Kick + Anti-Ban simultaneamente",
+        Desc = "Ativa Anti-Tools + Anti-Kick + Anti-Ban",
         Callback = function(v)
             antiAdminEnabled = v
             if v then
                 antiToolsEnabled = true
                 antiKickEnabled = true
                 antiBanEnabled = true
-                setupAntiAdmin()
-                warn("[ANTI-ADMIN] TODAS AS PROTECOES ATIVADAS")
+                setupAntiTools()
+                setupAntiKick()
+                setupAntiBan()
+                warn("[ANTI-ADMIN] TODAS PROTECOES ATIVADAS")
             else
                 antiToolsEnabled = false
                 antiKickEnabled = false
@@ -1192,27 +1326,24 @@ if ok and WindUILib then
                     if conn then conn:Disconnect() end
                 end
                 antiToolsConnections = {}
-                warn("[ANTI-ADMIN] TODAS AS PROTECOES DESATIVADAS")
+                warn("[ANTI-ADMIN] TODAS PROTECOES DESATIVADAS")
             end
         end
     })
 
     SectionSecurity:Toggle({
         Title = "Anti-ban-casa",
-        Desc = "Tenta prevenir bans de casas.",
+        Desc = "Previne bans de casas",
         Callback = function(v)
             if v then
                 local oldFireServer = remoteEvent.FireServer
                 remoteEvent.FireServer = function(self, eventName, ...)
                     if eventName == "BanFromHouse" then
-                        warn("Tentativa de ban de casa detectada e bloqueada!")
+                        warn("Ban de casa bloqueado!")
                         return
                     end
                     return oldFireServer(self, eventName, ...)
                 end
-                warn("Anti-ban-casa ativado.")
-            else
-                warn("Anti-ban-casa desativado.")
             end
         end
     })
@@ -1220,36 +1351,39 @@ if ok and WindUILib then
     local SectionHouses = TabSecurity:Section({ Title = "Casas", Icon = "home", Opened = true })
     SectionHouses:Button({
         Title = "Desbanir de todas as casas",
-        Desc = "Envia comando para desbanir.",
+        Desc = "Envia comando para desbanir",
         Callback = function() Say(";unbanallhouses") end
     })
     SectionHouses:Button({
         Title = "Auto-ban ao entrar na casa",
-        Desc = "Tenta banir jogadores que entram em uma casa.",
+        Desc = "Tenta banir jogadores que entram",
         Callback = function() local t = findTarget(TargetName) if t then Say(";autobanhouse") end end
     })
 
     SectionSecurity:Toggle({
-        Title = "Anti-Lag (Experimental)",
-        Desc = "Tenta reduzir o lag desativando efeitos visuais.",
+        Title = "Anti-Lag",
+        Desc = "Reduz lag desativando efeitos",
         Callback = function(v)
+            antiLagEnabled = v
             if v then
                 Lighting.GlobalShadows = false
                 for _, part in ipairs(Workspace:GetDescendants()) do
                     if part:IsA("ParticleEmitter") then part.Enabled = false end
                 end
+                warn("[ANTI-LAG] ATIVADO")
             else
                 Lighting.GlobalShadows = true
                 for _, part in ipairs(Workspace:GetDescendants()) do
                     if part:IsA("ParticleEmitter") then part.Enabled = true end
                 end
+                warn("[ANTI-LAG] DESATIVADO")
             end
         end
     })
 
     SectionSecurity:Button({
         Title = "Remover Todos os Efeitos",
-        Desc = "Remove todos os efeitos visuais e de audio ativos.",
+        Desc = "Remove todos os efeitos ativos",
         Callback = function()
             if currentSound then currentSound:Destroy() currentSound = nil end
             exitBackrooms()
@@ -1258,14 +1392,16 @@ if ok and WindUILib then
             removeColoredName()
             Lighting.Brightness = 2; Lighting.ExposureCompensation = 0; if Lighting:FindFirstChild("NV_Effect") then Lighting.NV_Effect:Destroy() end
             RunService:UnbindFromRenderStep("MotionBlur"); if Lighting:FindFirstChild("MB_Effect") then Lighting.MB_Effect:Destroy() end
-            warn("Todos os efeitos visuais e de audio foram removidos.")
+            stopAura()
+            stopKillAll()
+            warn("Todos os efeitos removidos.")
         end
     })
     SectionSecurity:Button({
         Title = "Limpar Mochila",
-        Desc = "Remove todas as ferramentas da sua mochila.",
+        Desc = "Remove todas as ferramentas",
         Callback = function()
-            for _, item in ipairs(Players.LocalPlayer.Backpack:GetChildren()) do
+            for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
                 if item:IsA("Tool") then item:Destroy() end
             end
             warn("Mochila limpa.")
@@ -1273,41 +1409,37 @@ if ok and WindUILib then
     })
     SectionSecurity:Button({
         Title = "Limpar Personagem",
-        Desc = "Remove todas as ferramentas do seu personagem.",
+        Desc = "Remove ferramentas do personagem",
         Callback = function()
-            if Players.LocalPlayer.Character then
-                for _, item in ipairs(Players.LocalPlayer.Character:GetChildren()) do
+            if LocalPlayer.Character then
+                for _, item in ipairs(LocalPlayer.Character:GetChildren()) do
                     if item:IsA("Tool") then item:Destroy() end
                 end
             end
-            warn("Personagem limpo de ferramentas.")
+            warn("Personagem limpo.")
         end
     })
 
-    -- Atualizacao da lista de jogadores
     Players.PlayerAdded:Connect(function()
         local l = getPlayersList()
         DropdownMain:SetValues(l)
         DropdownVis:SetValues(l)
-        DropdownJump:SetValues(l)
         updateESP()
     end)
     Players.PlayerRemoving:Connect(function()
         local l = getPlayersList()
         DropdownMain:SetValues(l)
         DropdownVis:SetValues(l)
-        DropdownJump:SetValues(l)
         removeESPAdornment(Players:GetPlayerByUserId(TargetName))
         updateESP()
     end)
 
     SectionFX:Button({Title = "Screen Shake", Desc = "Efeito de impacto", Callback = function() local s = tick() local c; c = RunService.RenderStepped:Connect(function() if tick()-s > 1 then c:Disconnect() return end Camera.CFrame = Camera.CFrame * CFrame.Angles(math.rad(math.random(-1,1)), math.rad(math.random(-1,1)), 0) end) end})
 
-    -- Sistema de Musica APENAS LOCAL
     local SectionMusic = TabVisuals:Section({ Title = "Sistema de Musica", Icon = "music", Opened = true })
     local MusicID = "83032125898517"
     SectionMusic:Input({Title = "ID da Musica", Placeholder = "83032125898517", Callback = function(v) MusicID = v end})
-    SectionMusic:Button({Title = "Tocar Musica (Local)", Desc = "Toca a musica apenas para voce", Callback = function() 
+    SectionMusic:Button({Title = "Tocar Musica (Local)", Desc = "Toca apenas para voce", Callback = function() 
         if currentSound then currentSound:Destroy() end 
         currentSound = Instance.new("Sound", Workspace)
         currentSound.SoundId = "rbxassetid://"..MusicID:gsub("%D", "") 
@@ -1315,7 +1447,7 @@ if ok and WindUILib then
         currentSound.Looped = true 
         currentSound:Play() 
     end})
-    SectionMusic:Button({Title = "Parar Musica (Local)", Desc = "Para a musica apenas para voce", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
+    SectionMusic:Button({Title = "Parar Musica (Local)", Desc = "Para a musica", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
     SectionMusic:Slider({
         Title = "Volume da Musica",
         Value = { Min = 0, Max = 1, Default = currentSoundVolume },
@@ -1326,67 +1458,33 @@ if ok and WindUILib then
         end
     })
 
-    -- Ferramentas RARAS
     local SectionTools = TabTools:Section({ Title = "Ferramentas Raras", Icon = "tools", Opened = true })
 
-    SectionTools:Button({
-        Title = "Darkheart",
-        Desc = "Gear lendario - Mais escuro que RGB(0,0,0). Rouba vida. Apenas 40 copias!",
-        Callback = function() giveTool("Darkheart", "16895215") end
-    })
-    SectionTools:Button({
-        Title = "Illumina",
-        Desc = "Arma favorita do Telamon. Leve, agil e mortal. Apenas 62 copias!",
-        Callback = function() giveTool("Illumina", "16641246") end
-    })
-    SectionTools:Button({
-        Title = "Ghostwalker",
-        Desc = "Gear lendario com habilidades especiais. Apenas 58 copias!",
-        Callback = function() giveTool("Ghostwalker", "16894233") end
-    })
-    SectionTools:Button({
-        Title = "Windforce",
-        Desc = "Ela e como o vento. Gear lendario. Apenas 69 copias!",
-        Callback = function() giveTool("Windforce", "16895214") end
-    })
-    SectionTools:Button({
-        Title = "Venomshank",
-        Desc = "Espada venenosa lendaria. Cria chuva acida em 50 studs. Muito rara!",
-        Callback = function() giveTool("Venomshank", "16895210") end
-    })
-    SectionTools:Button({
-        Title = "Firebrand",
-        Desc = "Espada de fogo lendaria. Incendeia inimigos. Gear extremamente rara!",
-        Callback = function() giveTool("Firebrand", "16895209") end
-    })
-    SectionTools:Button({
-        Title = "Icedagger",
-        Desc = "Adaga de gelo lendaria. Congela inimigos. Apenas 75 copias!",
-        Callback = function() giveTool("Icedagger", "16895208") end
-    })
-    SectionTools:Button({
-        Title = "Crescendo, The Soul Stealer",
-        Desc = "Forjada com chamas ardentes e olho de demonio. Apenas 58 copias!",
-        Callback = function() giveTool("Crescendo, The Soul Stealer", "16895213") end
-    })
-    SectionTools:Button({
-        Title = "Sword Cane",
-        Desc = "Item limitado raro. Parece bengala, e espada mortal. Apenas 45 copias!",
-        Callback = function() giveTool("Sword Cane", "11419397") end
-    })
-    SectionTools:Button({
-        Title = "Spec Epsilon Biograft",
-        Desc = "Espada de energia do futuro. Apenas 51 copias!",
-        Callback = function() giveTool("Spec Epsilon Biograft", "16895212") end
-    })
-    SectionTools:Button({
-        Title = "Red Balloon",
-        Desc = "Balao vermelho extremamente raro. Referencia 99 Luftballons. Apenas 56 copias!",
-        Callback = function() giveTool("Red Balloon", "16895211") end
-    })
+    SectionTools:Button({Title = "Darkheart", Desc = "Gear lendario. Rouba vida. 40 copias!", Callback = function() giveTool("Darkheart", "16895215") end})
+    SectionTools:Button({Title = "Illumina", Desc = "Arma do Telamon. 62 copias!", Callback = function() giveTool("Illumina", "16641246") end})
+    SectionTools:Button({Title = "Ghostwalker", Desc = "Gear lendario. 58 copias!", Callback = function() giveTool("Ghostwalker", "16894233") end})
+    SectionTools:Button({Title = "Windforce", Desc = "Como o vento. 69 copias!", Callback = function() giveTool("Windforce", "16895214") end})
+    SectionTools:Button({Title = "Venomshank", Desc = "Espada venenosa. Muito rara!", Callback = function() giveTool("Venomshank", "16895210") end})
+    SectionTools:Button({Title = "Firebrand", Desc = "Espada de fogo. Lendaria!", Callback = function() giveTool("Firebrand", "16895209") end})
+    SectionTools:Button({Title = "Icedagger", Desc = "Adaga de gelo. 75 copias!", Callback = function() giveTool("Icedagger", "16895208") end})
+    SectionTools:Button({Title = "Crescendo", Desc = "Rouba almas. 58 copias!", Callback = function() giveTool("Crescendo, The Soul Stealer", "16895213") end})
+    SectionTools:Button({Title = "Sword Cane", Desc = "Bengala mortal. 45 copias!", Callback = function() giveTool("Sword Cane", "11419397") end})
+    SectionTools:Button({Title = "Spec Epsilon Biograft", Desc = "Espada do futuro. 51 copias!", Callback = function() giveTool("Spec Epsilon Biograft", "16895212") end})
+    SectionTools:Button({Title = "Red Balloon", Desc = "Extremamente raro. 56 copias!", Callback = function() giveTool("Red Balloon", "16895211") end})
 
     local SectionJumpTarget = TabJumpscares:Section({ Title = "Selecionar Alvo", Icon = "user", Opened = true })
     local DropdownJump = SectionJumpTarget:Dropdown({Title = "Selecionar Jogador", Values = getPlayersList(), Callback = function(opt) TargetName = opt end})
+
+    SectionJumpTarget:Button({
+        Title = "Atualizar Lista",
+        Desc = "Atualiza lista de jogadores",
+        Callback = function()
+            local l = getPlayersList()
+            DropdownJump:SetValues(l)
+            warn("Lista atualizada! " .. #l .. " jogadores.")
+        end
+    })
+
     local SectionJumpFX = TabJumpscares:Section({ Title = "Efeitos Visuais (Jumpscares)", Icon = "zap", Opened = true })
     SectionJumpFX:Button({Title = "Jumpscare #1", Desc = "Flash + Tremor + Scream", Callback = function() executeJS(1, findTarget(TargetName)) end})
     SectionJumpFX:Button({Title = "Jumpscare #2", Desc = "Tela Vermelha + Horror", Callback = function() executeJS(2, findTarget(TargetName)) end})
@@ -1394,10 +1492,9 @@ if ok and WindUILib then
 
     local SectionAvatar = TabJumpscares:Section({ Title = "Avatar", Icon = "user-circle", Opened = true })
     SectionAvatar:Input({Title = "Nome do Avatar", Placeholder = "Digite o nome...", Callback = function(val) AvatarName = val end})
-    SectionAvatar:Button({Title = "Colorir Nome", Desc = "Coloca o nome colorido sobre sua cabeca", Callback = function() if AvatarName ~= "" then createColoredName(AvatarName) end end})
-    SectionAvatar:Button({Title = "Remover Nome Colorido", Desc = "Remove o nome colorido da sua cabeca", Callback = function() removeColoredName() end})
+    SectionAvatar:Button({Title = "Colorir Nome", Desc = "Nome colorido sobre a cabeca", Callback = function() if AvatarName ~= "" then createColoredName(AvatarName) end end})
+    SectionAvatar:Button({Title = "Remover Nome Colorido", Desc = "Remove nome colorido", Callback = function() removeColoredName() end})
 
-    -- Atualizacao da lista de jogadores
     Players.PlayerAdded:Connect(function()
         local l = getPlayersList()
         DropdownMain:SetValues(l)
@@ -1415,5 +1512,4 @@ if ok and WindUILib then
     end)
 end
 
--- Conecta a atualizacao do ESP
 RunService.RenderStepped:Connect(updateESP)
