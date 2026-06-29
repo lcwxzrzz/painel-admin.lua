@@ -32,6 +32,41 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 --// Variáveis de Estado
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Garante que o RemoteEvent existe
+local remoteEvent = ReplicatedStorage:FindFirstChild("AdminPanelRemoteEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
+remoteEvent.Name = "AdminPanelRemoteEvent"
+
+
+--// Função para dar ferramentas (requer RemoteEvent no servidor)
+local function giveTool(toolName, toolId)
+    if remoteEvent then
+        remoteEvent:FireServer("GiveTool", toolName, toolId)
+    else
+        warn("AdminPanelRemoteEvent não encontrado em ReplicatedStorage. Ferramentas não podem ser dadas.")
+    end
+end
+
+--// Função para tocar música global (requer RemoteEvent no servidor)
+local function playGlobalMusic(musicId, volume)
+    if remoteEvent then
+        remoteEvent:FireServer("PlayGlobalMusic", musicId, volume)
+    else
+        warn("AdminPanelRemoteEvent não encontrado em ReplicatedStorage. Música global não pode ser tocada.")
+    end
+end
+
+--// Função para parar música global (requer RemoteEvent no servidor)
+local function stopGlobalMusic()
+    if remoteEvent then
+        remoteEvent:FireServer("StopGlobalMusic")
+    else
+        warn("AdminPanelRemoteEvent não encontrado em ReplicatedStorage. Música global não pode ser parada.")
+    end
+end
+
+
 local viewingTarget = nil
 local viewConnection = nil
 local bangLoop = nil
@@ -107,6 +142,47 @@ local function createCart(color)
 end
 
 --// Função de Kill Aprimorada com Carrinho (Client-side)
+--// Função de Kill Aprimorada com Fling (Client-side)
+local function executeKillWithFling(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local targetChar = targetPlayer.Character
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local char = LocalPlayer.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local oldPos = rootPart.CFrame
+
+    local function fling(targetPart)
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "FlingBV"
+        bv.Parent = targetPart
+        bv.Velocity = Vector3.new(0, 9e8, 0) -- Força para cima extrema
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        Debris:AddItem(bv, 0.5) -- Remove rapidamente
+
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "FlingBG"
+        bg.Parent = targetPart
+        bg.CFrame = CFrame.new(targetPart.Position, targetPart.Position + Vector3.new(math.random(-10,10), 0, math.random(-10,10)))
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        Debris:AddItem(bg, 0.5)
+    end
+
+    -- Tenta flinguir a parte principal do alvo
+    fling(targetRoot)
+
+    -- Teleporta o jogador para uma posição muito alta e depois para baixo do mapa para garantir a morte
+    targetRoot.CFrame = CFrame.new(targetRoot.Position.X, 10000, targetRoot.Position.Z)
+    task.wait(0.1)
+    targetRoot.CFrame = CFrame.new(targetRoot.Position.X, -10000, targetRoot.Position.Z)
+
+    -- Retorna o jogador local para a posição original
+    rootPart.CFrame = oldPos
+end
+
 local function executeKillWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -140,6 +216,21 @@ local function executeKillWithCart(targetPlayer)
 end
 
 --// Função de Bring Aprimorada com Carrinho (Client-side)
+--// Função de Bring Aprimorada com Teleporte (Client-side)
+local function executeBringWithTeleport(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local targetChar = targetPlayer.Character
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local adminChar = LocalPlayer.Character
+    local adminRoot = adminChar and adminChar:FindFirstChild("HumanoidRootPart")
+    if not adminRoot then return end
+
+    -- Teleporta o alvo para a posição do admin, um pouco acima para evitar colisão imediata
+    targetRoot.CFrame = adminRoot.CFrame * CFrame.new(0, 5, 0)
+end
+
 local function executeBringWithCart(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
@@ -184,7 +275,7 @@ local function startKillAll()
         if not killAllActive then killAllConnection:Disconnect(); return end
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
-                executeKillWithCart(player)
+                executeKillWithFling(player)
             end
         end
     end)
@@ -368,7 +459,7 @@ local function giveTool(toolName, toolId)
         mesh.MeshId = "rbxassetid://" .. toolId .. "/mesh"
     end
     
-    tool.Parent = LocalPlayer.Backpack
+    tool.Parent = LocalPllayer.Backpack
 end
 
 --// Função para criar o Boombox Voador
@@ -511,11 +602,11 @@ if ok and WindUILib then
         Callback = function(opt) TargetName = opt end
     })
 
-    SectionActions:Button({
-        Title = ";kill player",
-        Desc = "Elimina o alvo com o carrinho e leva para baixo da terra",
-        Callback = function() local t = findTarget(TargetName) if t then executeKillWithCart(t) end end
-    })
+SectionActions:Button({
+	        Title = ";kill player",
+	        Desc = "Elimina o alvo com fling e teleporte para fora do mapa (client-side)",
+	        Callback = function() local t = findTarget(TargetName) if t then executeKillWithFling(t) end end
+	    })
 
     SectionActions:Button({
         Title = ";kill all",
@@ -543,11 +634,11 @@ if ok and WindUILib then
     })
 
     -- Novo botão: ;bring player (Movido para Efeitos Visuais)
-    SectionVisTarget:Button({
-        Title = ";bring player",
-        Desc = "Puxa o jogador selecionado para sua localização com um carrinho",
-        Callback = function() local t = findTarget(TargetName) if t then executeBringWithCart(t) end end
-    })
+SectionVisTarget:Button({
+	        Title = ";bring player",
+	        Desc = "Teleporta o jogador selecionado para sua localização (client-side)",
+	        Callback = function() local t = findTarget(TargetName) if t then executeBringWithTeleport(t) end end
+	    })
 
     -- Novo botão: ;bring ALL (Movido para Efeitos Visuais)
     SectionVisTarget:Button({
@@ -556,7 +647,7 @@ if ok and WindUILib then
         Callback = function() 
             for _, player in ipairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
-                    executeBringWithCart(player)
+                    executeBringWithTeleport(player)
                 end
             end
         end
@@ -585,15 +676,21 @@ if ok and WindUILib then
     local SectionMusic = TabVisuals:Section({ Title = "Sistema de Música", Icon = "music", Opened = true })
     local MusicID = "83032125898517" -- ID de música padrão do usuário
     SectionMusic:Input({Title = "ID da Música", Placeholder = "83032125898517", Callback = function(v) MusicID = v end})
-    SectionMusic:Button({Title = "Tocar Música", Callback = function() 
-        if currentSound then currentSound:Destroy() end 
-        currentSound = Instance.new("Sound", Workspace)
-        currentSound.SoundId = "rbxassetid://"..MusicID:gsub("%D", "") 
-        currentSound.Volume = currentSoundVolume -- Usa o volume atual
-        currentSound.Looped = true 
-        currentSound:Play() 
-    end})
-    SectionMusic:Button({Title = "Parar Música", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
+SectionMusic:Button({Title = "Tocar Música (Local)", Desc = "Toca a música apenas para você", Callback = function() 
+	        if currentSound then currentSound:Destroy() end 
+	        currentSound = Instance.new("Sound", Workspace)
+	        currentSound.SoundId = "rbxassetid://"..MusicID:gsub("%D", "") 
+	        currentSound.Volume = currentSoundVolume -- Usa o volume atual
+	        currentSound.Looped = true 
+	        currentSound:Play() 
+	    end})
+	    SectionMusic:Button({Title = "Tocar Música (Global)", Desc = "Toca a música para todos no servidor (requer script no servidor)", Callback = function() 
+	        playGlobalMusic(MusicID:gsub("%D", ""), currentSoundVolume)
+	    end})
+    SectionMusic:Button({Title = "Parar Música (Local)", Desc = "Para a música apenas para você", Callback = function() if currentSound then currentSound:Destroy() currentSound = nil end end})
+	    SectionMusic:Button({Title = "Parar Música (Global)", Desc = "Para a música para todos no servidor (requer script no servidor)", Callback = function() 
+	        stopGlobalMusic()
+	    end})
     SectionMusic:Slider({
         Title = "Volume da Música",
         Value = { Min = 0, Max = 1, Default = currentSoundVolume },
