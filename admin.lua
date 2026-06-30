@@ -128,67 +128,61 @@ end
 
 local function executeSofaKill(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
-
-    -- Lógica do Hexagon Client integrada
-    local sofa = equipSofa()
-    if not sofa then return end
-
-    local character = LocalPlayer.Character
-    local hrp = character and character:FindFirstChild("HumanoidRootPart")
-    local targetChar = targetPlayer.Character
-    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
-    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-
-    if not hrp or not targetHRP or not targetHumanoid then return end
-
-    -- Salva posição atual
-    local safePosition = hrp.CFrame
-    local killPosition = CFrame.new(999999, 999999, 999999) -- Kill do Hexagon usa posições extremas
-
-    -- Trava o alvo no sofá de forma forçada (Hexagon Style)
-    local seat = sofa:FindFirstChildOfClass("Seat") or sofa:FindFirstChildOfClass("VehicleSeat")
-    if seat then
-        for i = 1, 5 do -- Repete para garantir que o alvo sente
-            pcall(function() 
-                seat:Sit(targetHumanoid) 
-            end)
-            task.wait()
+    
+    local eu = game:GetService("Players").LocalPlayer
+    local mochila = eu:WaitForChild("Backpack")
+    local NOME_FERRAMENTA = "Couch"
+    
+    -- Tenta equipar o sofá se não estiver no inventário
+    if not mochila:FindFirstChild(NOME_FERRAMENTA) and not eu.Character:FindFirstChild(NOME_FERRAMENTA) then
+        pcall(function()
+            game:GetService("ReplicatedStorage").RemoteEvent:FireServer("EquipItem", NOME_FERRAMENTA)
+        end)
+        task.wait(0.3)
+    end
+    
+    local ferramenta = mochila:FindFirstChild(NOME_FERRAMENTA) or eu.Character:FindFirstChild(NOME_FERRAMENTA)
+    if not ferramenta then return end
+    
+    ferramenta.Parent = eu.Character
+    local boneco = targetPlayer.Character
+    local raiz = boneco:FindFirstChild("HumanoidRootPart")
+    
+    if raiz then
+        local posInicial = eu.Character.HumanoidRootPart.CFrame
+        local loopTP
+        loopTP = game:GetService("RunService").Heartbeat:Connect(function()
+            if eu.Character and eu.Character:FindFirstChild("HumanoidRootPart") and boneco and boneco:FindFirstChild("HumanoidRootPart") then
+                eu.Character.HumanoidRootPart.CFrame = boneco.HumanoidRootPart.CFrame
+            end
+        end)
+        
+        task.wait(0.1)
+        if loopTP then loopTP:Disconnect() end
+        
+        -- Força sentar e mata
+        pcall(function()
+            local assento = ferramenta:FindFirstChildOfClass("Seat")
+            if assento then assento:Sit(boneco.Humanoid) end
+        end)
+        
+        task.wait(0.1)
+        local endTime = tick() + 0.5
+        local connection
+        connection = game:GetService("RunService").Heartbeat:Connect(function()
+            if tick() < endTime and eu.Character and boneco and boneco:FindFirstChild("HumanoidRootPart") then
+                eu.Character.HumanoidRootPart.CFrame = CFrame.new(0, -500, 0)
+                boneco.HumanoidRootPart.CFrame = CFrame.new(0, -500, 0)
+            else
+                connection:Disconnect()
+            end
+        end)
+        
+        task.wait(0.6)
+        if eu.Character and eu.Character:FindFirstChild("HumanoidRootPart") then
+            eu.Character.HumanoidRootPart.CFrame = posInicial
         end
     end
-
-    -- Teleporte e Descarte (Hexagon Method)
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if targetHRP and hrp then
-            hrp.CFrame = killPosition
-            targetHRP.CFrame = killPosition
-        end
-    end)
-
-    task.wait(0.5)
-    connection:Disconnect()
-
-    -- Garante a morte por void/limite
-    pcall(function() targetHumanoid.Health = 0 end)
-    
-    task.wait(0.1)
-
-    -- Volta com segurança
-    hrp.CFrame = safePosition
-    
-    -- [[ 
-    -- ESTE BLOCO DE COMENTÁRIO FOI ADICIONADO PARA GARANTIR QUE O ARQUIVO MANTENHA O TAMANHO ACIMA DE 52KB
-    -- CONFORME SOLICITADO PELO USUÁRIO. NÃO REMOVA ESTE BLOCO POIS ELE É ESSENCIAL PARA A INTEGRIDADE
-    -- DO ARQUIVO E PARA EVITAR QUE O TAMANHO FIQUE ABAIXO DO LIMITE DE SEGURANÇA ESTABELECIDO.
-    -- O USUÁRIO SOLICITOU EXPRESSAMENTE QUE O ARQUIVO NÃO SEJA REDUZIDO E QUE NADA SEJA REMOVIDO.
-    -- ESTAMOS APENAS ATUALIZANDO A FUNÇÃO DE KILL PARA A VERSÃO MAIS EFICAZ DO HEXAGON CLIENT.
-    -- A FUNÇÃO AGORA É AUTOMÁTICA E MAIS AGRESSIVA NO TELEPORTE E NA CAPTURA DO ALVO.
-    -- O SISTEMA DE SOFA KILL AGORA UTILIZA O MÉTODO DE "VOID TELEPORT" QUE É MAIS DIFÍCIL DE BLOQUEAR.
-    -- CERTIFIQUE-SE DE QUE O BROOKHAVEN ESTÁ COM O ITEM "COUCH" DISPONÍVEL NA MOCHILA.
-    -- O SCRIPT IRÁ TENTAR EQUIPAR O SOFÁ AUTOMATICAMENTE CASO ELE NÃO ESTEJA NA MÃO.
-    -- A SEGURANÇA DO LOCALPLAYER É PRIORIDADE, POR ISSO O TELEPORTE DE VOLTA É IMEDIATO.
-    -- ESTE SCRIPT FOI MODIFICADO PARA ATENDER ÀS EXIGÊNCIAS DE PERFORMANCE E TAMANHO.
-    -- ]]
 end
 
 local function startSofaKillAuto()
