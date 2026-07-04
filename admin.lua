@@ -1022,177 +1022,20 @@ if ok and WindUILib then
 
     local TabMain = Window:Tab({ Title = "Comandos", Icon = "terminal" })
     local TabGeneral = Window:Tab({ Title = "Comandos Gerais", Icon = "terminal" })
-    local SectionHexagon = TabGeneral:Section({ Title = "Hexagon Client", Icon = "code", Opened = true })
+    local SectionSpectra = TabGeneral:Section({ Title = "Spectra Hub - Troll", Icon = "ghost", Opened = true })
 
-    SectionHexagon:Button({
-        Title = "Carregar Hexagon Client",
-        Desc = "Executa o script original do Hexagon Client",
-        Callback = function() loadstring(game:HttpGet("https://rawscripts.net/raw/Brookhaven-RP-HX-Hexagon-Client-90722"))() end
+    SectionSpectra:Button({
+        Title = "Carregar Spectra Hub",
+        Desc = "Executa o script original do Spectra Hub",
+        Callback = function() loadstring(game:HttpGet("https://rawscripts.net/raw/Brookhaven-RP-Spectra-Hub-193872"))() end
     })
 
-    local SectionTroll = TabGeneral:Section({ Title = "Comandos Troll (Hexagon)", Icon = "ghost", Opened = true })
-
-    SectionTroll:Button({
-        Title = "ESP Players",
-        Desc = "ESP (Ver Jogadores)",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";espplayers " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Glue Player",
-        Desc = "Grudar no Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";glueplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Headsit",
-        Desc = "Sentar na Cabeça",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";headsit " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Invisibility Toggle",
-        Desc = "Alternar Invisibilidade",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";invisibilitytoggle " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-      })
-
-    SectionTroll:Button({
-        Title = "Bring Player",
-        Desc = "Puxar Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";bringplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Freeze Player",
-        Desc = "Congelar Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";freezeplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Blind Player",
-        Desc = "Cegar Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";blindplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Lag Player",
-        Desc = "Lagar Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";lagplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Teleport to Player",
-        Desc = "Teleportar para Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";teleporttoplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "View Player",
-        Desc = "Observar Jogador",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";viewplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
-        Title = "Unview Player",
-        Desc = "Parar de Observar",
-        Callback = function() 
-            local t = findTarget(TargetName)
-            if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";unviewplayer " .. t.Name)
-            else
-                warn("Selecione um jogador primeiro!")
-            end
-        end
-    })
-
-    SectionTroll:Button({
+    SectionSpectra:Button({
         Title = "Fling Player",
-        Desc = "Arremessar Jogador",
+        Desc = "Arremessa o jogador para longe",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
                 Say(";flingplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
@@ -1200,13 +1043,12 @@ if ok and WindUILib then
         end
     })
 
-    SectionTroll:Button({
+    SectionSpectra:Button({
         Title = "Kill Player",
-        Desc = "Matar Jogador",
+        Desc = "Mata o jogador",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
                 Say(";killplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
@@ -1214,83 +1056,90 @@ if ok and WindUILib then
         end
     })
 
-    SectionTroll:Button({
-        Title = "Trip Player",
-        Desc = "Tropeçar Jogador",
+    SectionSpectra:Button({
+        Title = "Bring Player",
+        Desc = "Traz o jogador até você",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";tripplayer " .. t.Name)
+                Say(";bringplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
         end
     })
 
-    SectionTroll:Button({
-        Title = "Attach Player",
-        Desc = "Anexar ao Jogador",
+    SectionSpectra:Button({
+        Title = "Teleport to Player",
+        Desc = "Teleporta você até o jogador",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";attachplayer " .. t.Name)
+                Say(";teleporttoplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
         end
     })
 
-    SectionTroll:Button({
-        Title = "Control Player",
-        Desc = "Controlar Jogador (Simulado)",
+    SectionSpectra:Button({
+        Title = "Freeze Player",
+        Desc = "Congela o jogador no lugar",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";controlplayer " .. t.Name)
+                Say(";freezeplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
         end
     })
 
-    SectionTroll:Button({
-        Title = "Spin Player",
-        Desc = "Girar Jogador",
+    SectionSpectra:Button({
+        Title = "Unfreeze Player",
+        Desc = "Descongela o jogador",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";spinplayer " .. t.Name)
+                Say(";unfreezeplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
         end
     })
 
-    SectionTroll:Button({
-        Title = "Noobify Player",
-        Desc = "Transformar em Noob",
+    SectionSpectra:Button({
+        Title = "Blind Player",
+        Desc = "Deixa a tela do jogador preta",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
-                Say(";noobifyplayer " .. t.Name)
+                Say(";blindplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
         end
     })
 
-    SectionTroll:Button({
+    SectionSpectra:Button({
+        Title = "Unblind Player",
+        Desc = "Remove a cegueira",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";unblindplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
         Title = "Jail Player",
-        Desc = "Prender Jogador",
+        Desc = "Cria uma jaula ao redor do jogador",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
                 Say(";jailplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
@@ -1298,14 +1147,195 @@ if ok and WindUILib then
         end
     })
 
-    SectionTroll:Button({
-        Title = "Fire Player",
-        Desc = "Botar Fogo no Jogador",
+    SectionSpectra:Button({
+        Title = "Unjail Player",
+        Desc = "Remove a jaula",
         Callback = function() 
             local t = findTarget(TargetName)
             if t then
-                -- Simulação dos comandos do Hexagon integrados
+                Say(";unjailplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Lag Player",
+        Desc = "Tenta causar lag no jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";lagplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Crash Player",
+        Desc = "Tenta fechar o jogo do jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";crashplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+     })
+
+    SectionSpectra:Button({
+        Title = "Control Player",
+        Desc = "Assume controle do personagem",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";controlplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Attach Player",
+        Desc = "Gruda você no jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";attachplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Trip Player",
+        Desc = "Faz o jogador cair",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";tripplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Spin Player",
+        Desc = "Faz o jogador girar sem parar",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";spinplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Noobify Player",
+        Desc = "Transforma o avatar em Noob",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";noobifyplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Sky Player",
+        Desc = "Lança o jogador para o céu",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";skyplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Void Player",
+        Desc = "Manda o jogador para o void",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";voidplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Fire Player",
+        Desc = "Coloca fogo no jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
                 Say(";fireplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Explode Player",
+        Desc = "Cria uma explosão no jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";explodeplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Cuff Player",
+        Desc = "Algema o jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";cuffplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Uncuff Player",
+        Desc = "Solta o jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";uncuffplayer " .. t.Name)
+            else
+                warn("Selecione um jogador primeiro!")
+            end
+        end
+    })
+
+    SectionSpectra:Button({
+        Title = "Headsit Player",
+        Desc = "Senta na cabeça do jogador",
+        Callback = function() 
+            local t = findTarget(TargetName)
+            if t then
+                Say(";headsitplayer " .. t.Name)
             else
                 warn("Selecione um jogador primeiro!")
             end
@@ -1732,3 +1762,52 @@ LocalPlayer.Chatted:Connect(function(msg)
         stopSofaKillAuto()
     end
 end)
+
+
+--// SISTEMA DE SEGURANÇA E INTEGRIDADE DO PAINEL ADMIN V2
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
+--// 
