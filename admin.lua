@@ -79,7 +79,7 @@ local sofaKillAutoActive = false
 local sofaKillAutoConnection = nil
 
 local function equipSofa()
-    return nil -- aquisicao remota de item desativada
+    do return nil end -- aquisicao remota de item desativada
     local backpack = LocalPlayer.Backpack
     local character = LocalPlayer.Character
     local sofaName = "Couch"
@@ -108,7 +108,7 @@ local function equipSofa()
 end
 
 local function executeSofaKill(targetPlayer)
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     
     local eu = game:GetService("Players").LocalPlayer
@@ -168,7 +168,7 @@ local function executeSofaKill(targetPlayer)
 end
 
 local function startSofaKillAuto()
-    return -- modo automatico desativado nesta variante cliente-only
+    do return end -- modo automatico desativado nesta variante cliente-only
 end
 
 local function stopSofaKillAuto()
@@ -212,7 +212,7 @@ local function createCart(color)
 end
 
 local function bringPlayer(targetPlayer)
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     Say(";bring")
 
@@ -249,7 +249,7 @@ local function bringPlayer(targetPlayer)
 end
 
 local function bringAll()
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     Say(";bring all")
     task.delay(0.5, function()
         for _, player in ipairs(Players:GetPlayers()) do
@@ -663,7 +663,7 @@ local function setupAntiTools()
 end
 
 local function setupAntiKick()
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not getrawmetatable or not setreadonly then
         warn("[ANTI-KICK] Executor nao suporta metatables")
         return
@@ -695,7 +695,7 @@ local function setupAntiKick()
 end
 
 local function setupAntiBan()
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not getrawmetatable or not setreadonly then
         warn("[ANTI-BAN] Executor nao suporta metatables")
         return
@@ -887,7 +887,7 @@ local function updateESP()
 end
 
 local function executeCrash(targetPlayer)
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
@@ -927,7 +927,7 @@ local function executeCrash(targetPlayer)
 end
 
 local function executeTornado(targetPlayer)
-    return -- desativado nesta variante cliente-only
+    do return end -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
