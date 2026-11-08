@@ -32,8 +32,6 @@ local Mouse = LocalPlayer:GetMouse()
 --// Variaveis de Estado
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local remoteEvent = ReplicatedStorage:FindFirstChild("AdminPanelRemoteEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
-remoteEvent.Name = "AdminPanelRemoteEvent"
 
 local viewingTarget = nil
 local viewConnection = nil
@@ -59,25 +57,7 @@ local antiLagEnabled = false
 --// FUNCAO DE CHAT
 local lastCommandTime = {}
 local function Say(command)
-    if command:lower():find(";kill") or command:lower():find(";stop kill") then return end
-    if not command or command == "" then return end
-    local currentTime = tick()
-    if lastCommandTime[command] and (currentTime - lastCommandTime[command]) < 2 then
-        return
-    end
-    lastCommandTime[command] = currentTime
-
-    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-        local canal = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
-        if canal then
-            pcall(function() canal:SendAsync(command) end)
-        end
-    else
-        local event = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
-        if event and event:FindFirstChild("SayMessageRequest") then
-            pcall(function() event.SayMessageRequest:FireServer(command, "All") end)
-        end
-    end
+    return -- comandos no chat desativados nesta variante cliente-only
 end
 
 --// Função para encontrar jogador
@@ -99,6 +79,7 @@ local sofaKillAutoActive = false
 local sofaKillAutoConnection = nil
 
 local function equipSofa()
+    return nil -- aquisicao remota de item desativada
     local backpack = LocalPlayer.Backpack
     local character = LocalPlayer.Character
     local sofaName = "Couch"
@@ -114,7 +95,7 @@ local function equipSofa()
     else
         -- Tenta pegar do ReplicatedStorage se possível (Brookhaven Remote)
         pcall(function()
-            game:GetService("ReplicatedStorage").RemoteEvent:FireServer("EquipItem", sofaName)
+            -- pedido remoto removido nesta variante cliente-only
         end)
         task.wait(0.3)
         sofa = backpack:FindFirstChild(sofaName) or character:FindFirstChild(sofaName)
@@ -127,6 +108,7 @@ local function equipSofa()
 end
 
 local function executeSofaKill(targetPlayer)
+    return -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     
     local eu = game:GetService("Players").LocalPlayer
@@ -136,7 +118,7 @@ local function executeSofaKill(targetPlayer)
     -- Tenta equipar o sofá se não estiver no inventário
     if not mochila:FindFirstChild(NOME_FERRAMENTA) and not eu.Character:FindFirstChild(NOME_FERRAMENTA) then
         pcall(function()
-            game:GetService("ReplicatedStorage").RemoteEvent:FireServer("EquipItem", NOME_FERRAMENTA)
+            -- pedido remoto removido nesta variante cliente-only
         end)
         task.wait(0.3)
     end
@@ -186,22 +168,7 @@ local function executeSofaKill(targetPlayer)
 end
 
 local function startSofaKillAuto()
-    if sofaKillAutoActive then return end
-    sofaKillAutoActive = true
-    
-    sofaKillAutoConnection = Mouse.Button1Down:Connect(function()
-        if not sofaKillAutoActive then return end
-        local target = Mouse.Target
-        if target and target.Parent then
-            local char = target.Parent:IsA("Model") and target.Parent or target.Parent.Parent:IsA("Model") and target.Parent.Parent
-            if char then
-                local p = Players:GetPlayerFromCharacter(char)
-                if p and p ~= LocalPlayer then
-                    executeSofaKill(p)
-                end
-            end
-        end
-    end)
+    return -- modo automatico desativado nesta variante cliente-only
 end
 
 local function stopSofaKillAuto()
@@ -245,6 +212,7 @@ local function createCart(color)
 end
 
 local function bringPlayer(targetPlayer)
+    return -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     Say(";bring")
 
@@ -281,6 +249,7 @@ local function bringPlayer(targetPlayer)
 end
 
 local function bringAll()
+    return -- desativado nesta variante cliente-only
     Say(";bring all")
     task.delay(0.5, function()
         for _, player in ipairs(Players:GetPlayers()) do
@@ -694,6 +663,7 @@ local function setupAntiTools()
 end
 
 local function setupAntiKick()
+    return -- desativado nesta variante cliente-only
     if not getrawmetatable or not setreadonly then
         warn("[ANTI-KICK] Executor nao suporta metatables")
         return
@@ -725,6 +695,7 @@ local function setupAntiKick()
 end
 
 local function setupAntiBan()
+    return -- desativado nesta variante cliente-only
     if not getrawmetatable or not setreadonly then
         warn("[ANTI-BAN] Executor nao suporta metatables")
         return
@@ -916,6 +887,7 @@ local function updateESP()
 end
 
 local function executeCrash(targetPlayer)
+    return -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
@@ -955,6 +927,7 @@ local function executeCrash(targetPlayer)
 end
 
 local function executeTornado(targetPlayer)
+    return -- desativado nesta variante cliente-only
     if not targetPlayer or not targetPlayer.Character then return end
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
@@ -1027,7 +1000,7 @@ if ok and WindUILib then
     SectionSpectra:Button({
         Title = "Carregar Spectra Hub",
         Desc = "Executa o script original do Spectra Hub",
-        Callback = function() loadstring(game:HttpGet("https://rawscripts.net/raw/Brookhaven-RP-Spectra-Hub-193872"))() end
+        Callback = function() warn("Carregador externo desativado nesta variante.") end
     })
 
     SectionSpectra:Button({
@@ -1406,8 +1379,8 @@ if ok and WindUILib then
     })
 
     SectionActions:Button({Title = ";tp player", Desc = "Teleporta para o jogador", Callback = function() local t = findTarget(TargetName) if t and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5) end end})
-    SectionActions:Button({Title = ";bang", Desc = "Inicia animacao bang", Callback = function() local t = findTarget(TargetName) if t then Say(";bang") if bangLoop then bangLoop:Disconnect() end bangLoop = RunService.Heartbeat:Connect(function() if t.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.1) * CFrame.new(0, 0, math.sin(tick() * 25) * 0.8) else if bangLoop then bangLoop:Disconnect() bangLoop = nil end end end) end end})
-    SectionActions:Button({Title = ";unbang", Desc = "Para animacao bang", Callback = function() Say(";unbang") if bangLoop then bangLoop:Disconnect() bangLoop = nil end end})
+    SectionActions:Button({Title = ";bang", Desc = "Inicia animacao bang", Callback = function() end})
+    SectionActions:Button({Title = ";unbang", Desc = "Para animacao bang", Callback = function() end})
     SectionActions:Button({
         Title = ";Crash player",
         Desc = "Tenta crachar o jogador selecionado",
@@ -1567,18 +1540,7 @@ if ok and WindUILib then
     SectionSecurity:Toggle({
         Title = "Anti-ban-casa",
         Desc = "Previne bans de casas",
-        Callback = function(v)
-            if v then
-                local oldFireServer = remoteEvent.FireServer
-                remoteEvent.FireServer = function(self, eventName, ...)
-                    if eventName == "BanFromHouse" then
-                        warn("Ban de casa bloqueado!")
-                        return
-                    end
-                    return oldFireServer(self, eventName, ...)
-                end
-            end
-        end
+        Callback = function(_) end
     })
 
     local SectionHouses = TabSecurity:Section({ Title = "Casas", Icon = "home", Opened = true })
@@ -1747,67 +1709,3 @@ if ok and WindUILib then
 end
 
 RunService.RenderStepped:Connect(updateESP)
-
-
-LocalPlayer.Chatted:Connect(function(msg)
-    local args = msg:lower():split(" ")
-    if args[1] == ";kill" then
-        if args[2] then
-            local t = findTarget(args[2])
-            if t then executeSofaKill(t) end
-        end
-    elseif args[1] == ";kill" and args[2] == "auto" then
-        startSofaKillAuto()
-    elseif args[1] == ";kill" and args[2] == "stop" or args[1] == ";stop" and args[2] == "kill" then
-        stopSofaKillAuto()
-    end
-end)
-
-
---// SISTEMA DE SEGURANÇA E INTEGRIDADE DO PAINEL ADMIN V2
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_SPECTRA_HUB_PROTECTION_
---// 
