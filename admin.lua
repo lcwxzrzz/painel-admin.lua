@@ -40,8 +40,6 @@ local currentSound = nil
 local currentSoundVolume = 0.5
 local backroomsFolder = nil
 local backroomsActive = false
-local backroomsOriginalCFrame = nil
-local backroomsOriginalLighting = nil
 local TargetName = ""
 local AvatarName = ""
 local currentBillboard = nil
@@ -292,86 +290,78 @@ local function bringAll()
     end)
 end
 
---// ==================== BACKROOMS - LABIRINTO REAL ====================
+--// ==================== BACKROOMS - LABIRINTO GRANDE ====================
 
-local function generateMazeRecursiveBacktracker(width, height)
-    local maze = {}
-    for y = 1, height * 2 + 1 do
-        maze[y] = {}
-        for x = 1, width * 2 + 1 do
-            maze[y][x] = 1
+local backroomsReturnCFrame = nil
+local backroomsLightingSnapshot = nil
+
+local function generateBackroomsGrid(size)
+    local cells = {}
+    for x = 1, size do
+        cells[x] = {}
+        for z = 1, size do
+            cells[x][z] = { visited = false, N = true, S = true, E = true, W = true }
         end
     end
 
-    local visited = {}
-    for y = 1, height do
-        visited[y] = {}
-        for x = 1, width do
-            visited[y][x] = false
-        end
-    end
-
-    local directions = {
-        {dx = 0, dy = -1},
-        {dx = 0, dy = 1},
-        {dx = 1, dy = 0},
-        {dx = -1, dy = 0}
+    -- Recursive Backtracker iterativo: evita estouro de pilha em mapas grandes.
+    local stack = {{x = math.ceil(size / 2), z = math.ceil(size / 2)}}
+    cells[stack[1].x][stack[1].z].visited = true
+    local dirs = {
+        {dx = 0, dz = -1, wall = "N", opposite = "S"},
+        {dx = 0, dz = 1, wall = "S", opposite = "N"},
+        {dx = 1, dz = 0, wall = "E", opposite = "W"},
+        {dx = -1, dz = 0, wall = "W", opposite = "E"}
     }
 
-    local function shuffle(t)
-        for i = #t, 2, -1 do
-            local j = math.random(i)
-            t[i], t[j] = t[j], t[i]
+    while #stack > 0 do
+        local current = stack[#stack]
+        local options = {}
+        for _, d in ipairs(dirs) do
+            local nx, nz = current.x + d.dx, current.z + d.dz
+            if nx >= 1 and nx <= size and nz >= 1 and nz <= size and not cells[nx][nz].visited then
+                options[#options + 1] = {x = nx, z = nz, dir = d}
+            end
+        end
+
+        if #options == 0 then
+            table.remove(stack)
+        else
+            local chosen = options[math.random(1, #options)]
+            local a = cells[current.x][current.z]
+            local b = cells[chosen.x][chosen.z]
+            a[chosen.dir.wall] = false
+            b[chosen.dir.opposite] = false
+            b.visited = true
+            stack[#stack + 1] = {x = chosen.x, z = chosen.z}
         end
     end
 
-    local function carve(cx, cy)
-        visited[cy][cx] = true
-        maze[cy * 2][cx * 2] = 0
-
-        local dirs = {table.unpack(directions)}
-        shuffle(dirs)
-
-        for _, dir in ipairs(dirs) do
-            local nx = cx + dir.dx
-            local ny = cy + dir.dy
-
-            if nx >= 1 and nx <= width and ny >= 1 and ny <= height and not visited[ny][nx] then
-                maze[cy * 2 + dir.dy][cx * 2 + dir.dx] = 0
-                carve(nx, ny)
+    -- Abre paredes extras para criar circuitos, atalhos e rotas alternativas.
+    for x = 1, size do
+        for z = 1, size do
+            local c = cells[x][z]
+            if x < size and c.E and math.random() < 0.19 then
+                c.E = false
+                cells[x + 1][z].W = false
+            end
+            if z < size and c.S and math.random() < 0.19 then
+                c.S = false
+                cells[x][z + 1].N = false
             end
         end
     end
-
-    carve(math.floor(width / 2) + 1, math.floor(height / 2) + 1)
-
-    -- Abre passagens extras entre celulas vizinhas para criar rotas alternativas,
-    -- cruzamentos e circuitos em vez de um unico caminho principal.
-    for y = 1, height do
-        for x = 1, width do
-            if x < width and math.random() < 0.20 then
-                maze[y * 2][x * 2 + 1] = 0
-            end
-            if y < height and math.random() < 0.20 then
-                maze[y * 2 + 1][x * 2] = 0
-            end
-        end
-    end
-
-    return maze
+    return cells
 end
 
 local function executeBackrooms()
     if backroomsActive then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then
-        warn("Nao foi possivel entrar: personagem ainda nao carregou.")
-        return
-    end
+    if not root then return end
 
-    backroomsOriginalCFrame = root.CFrame
-    backroomsOriginalLighting = {
+    backroomsReturnCFrame = root.CFrame
+    backroomsLightingSnapshot = {
         FogColor = Lighting.FogColor,
         FogEnd = Lighting.FogEnd,
         FogStart = Lighting.FogStart,
@@ -379,279 +369,277 @@ local function executeBackrooms()
         OutdoorAmbient = Lighting.OutdoorAmbient,
         Brightness = Lighting.Brightness,
         ColorShift_Bottom = Lighting.ColorShift_Bottom,
-        ColorShift_Top = Lighting.ColorShift_Top,
+        ColorShift_Top = Lighting.ColorShift_Top
     }
+
     backroomsActive = true
     if backroomsFolder then backroomsFolder:Destroy() end
-
-    backroomsFolder = Instance.new("Folder", Workspace)
+    backroomsFolder = Instance.new("Folder")
     backroomsFolder.Name = "Backrooms_Level0_V2"
+    backroomsFolder.Parent = Workspace
 
-    local basePos = Vector3.new(math.random(-100000, 100000), 8000, math.random(-100000, 100000))
+    local origin = root.Position + Vector3.new(0, 800, 0)
+    local SIZE = 71                 -- 5.041 células: muito maior que o mapa anterior.
+    local CELL = 10                 -- corredor livre mais apertado.
+    local WALL_HEIGHT = 17
+    local WALL_THICKNESS = 1.2
+    local total = SIZE * CELL
+    local cells = generateBackroomsGrid(SIZE)
 
-    Lighting.FogColor = Color3.fromRGB(180, 175, 155)
-    Lighting.FogEnd = 35
-    Lighting.FogStart = 2
-    Lighting.Ambient = Color3.fromRGB(90, 85, 65)
-    Lighting.OutdoorAmbient = Color3.fromRGB(50, 45, 35)
-    Lighting.Brightness = 0.5
-    Lighting.ColorShift_Bottom = Color3.fromRGB(200, 190, 160)
-    Lighting.ColorShift_Top = Color3.fromRGB(220, 210, 180)
+    Lighting.FogColor = Color3.fromRGB(180, 170, 125)
+    Lighting.FogStart = 5
+    Lighting.FogEnd = 95
+    Lighting.Ambient = Color3.fromRGB(90, 82, 58)
+    Lighting.OutdoorAmbient = Color3.fromRGB(55, 50, 35)
+    Lighting.Brightness = 0.65
+    Lighting.ColorShift_Bottom = Color3.fromRGB(190, 175, 115)
+    Lighting.ColorShift_Top = Color3.fromRGB(220, 205, 150)
 
-    local cc = Instance.new("ColorCorrectionEffect", Lighting)
+    local cc = Instance.new("ColorCorrectionEffect")
     cc.Name = "BackroomsCC_V2"
-    cc.TintColor = Color3.fromRGB(255, 240, 180)
-    cc.Saturation = -0.3
-    cc.Contrast = 0.05
-    cc.Brightness = -0.05
+    cc.TintColor = Color3.fromRGB(255, 239, 180)
+    cc.Saturation = -0.25
+    cc.Contrast = 0.08
+    cc.Parent = Lighting
 
-    local blur = Instance.new("BlurEffect", Lighting)
-    blur.Name = "BackroomsBlur"
-    blur.Size = 3
-
-    local mazeWidth = 30
-    local mazeHeight = 30
-    local cellSize = 12
-    local wallHeight = 25
-    local maze = generateMazeRecursiveBacktracker(mazeWidth, mazeHeight)
-
-    local function createPart(pos, size, color, material, name)
-        local p = Instance.new("Part", backroomsFolder)
-        p.Size = size
-        p.Position = pos
-        p.Anchored = true
-        p.Color = color
-        p.Material = material
-        p.Name = name or "BackroomsPart"
-        p.CanCollide = true
-        p.TopSurface = Enum.SurfaceType.Smooth
-        p.BottomSurface = Enum.SurfaceType.Smooth
-        return p
+    local function createPart(name, size, position, color, material, collide)
+        local part = Instance.new("Part")
+        part.Name = name
+        part.Size = size
+        part.Position = position
+        part.Anchored = true
+        part.CanCollide = collide ~= false
+        part.CastShadow = false
+        part.Color = color
+        part.Material = material or Enum.Material.SmoothPlastic
+        part.TopSurface = Enum.SurfaceType.Smooth
+        part.BottomSurface = Enum.SurfaceType.Smooth
+        part.Parent = backroomsFolder
+        return part
     end
 
-    local wallColor = Color3.fromRGB(215, 200, 145)
-    local carpetColor = Color3.fromRGB(160, 140, 105)
-    local ceilingColor = Color3.fromRGB(200, 195, 185)
-    local baseboardColor = Color3.fromRGB(130, 115, 75)
+    local wallColor = Color3.fromRGB(190, 177, 105)
+    local floorColor = Color3.fromRGB(125, 113, 77)
+    local ceilingColor = Color3.fromRGB(205, 197, 160)
 
-    for my = 1, #maze do
-        for mx = 1, #maze[my] do
-            local worldX = basePos.X + (mx - 1) * cellSize - (mazeWidth * cellSize)
-            local worldZ = basePos.Z + (my - 1) * cellSize - (mazeHeight * cellSize)
+    -- Piso e teto únicos reduzem bastante a quantidade de peças no celular.
+    createPart("Floor", Vector3.new(total, 1, total),
+        origin + Vector3.new(total / 2, -0.5, total / 2), floorColor, Enum.Material.Fabric)
+    createPart("Ceiling", Vector3.new(total, 1, total),
+        origin + Vector3.new(total / 2, WALL_HEIGHT, total / 2), ceilingColor, Enum.Material.SmoothPlastic)
 
-            if maze[my][mx] == 1 then
-                local wall = createPart(
-                    Vector3.new(worldX, basePos.Y + wallHeight/2, worldZ),
-                    Vector3.new(cellSize, wallHeight, cellSize),
-                    wallColor, Enum.Material.SmoothPlastic, "Wall_" .. mx .. "_" .. my
-                )
+    -- Paredes: cada divisória é criada uma única vez.
+    for x = 1, SIZE do
+        for z = 1, SIZE do
+            local c = cells[x][z]
+            local centerX = (x - 0.5) * CELL
+            local centerZ = (z - 0.5) * CELL
 
-                createPart(
-                    Vector3.new(worldX, basePos.Y + 0.3, worldZ),
-                    Vector3.new(cellSize, 0.6, cellSize + 0.1),
-                    baseboardColor, Enum.Material.Wood, "Baseboard_" .. mx .. "_" .. my
-                )
-            else
-                createPart(
-                    Vector3.new(worldX, basePos.Y - 0.5, worldZ),
-                    Vector3.new(cellSize, 0.8, cellSize),
-                    carpetColor, Enum.Material.Fabric, "Floor_" .. mx .. "_" .. my
-                )
-
-                createPart(
-                    Vector3.new(worldX, basePos.Y + wallHeight, worldZ),
-                    Vector3.new(cellSize, 0.5, cellSize),
-                    ceilingColor, Enum.Material.Plastic, "Ceiling_" .. mx .. "_" .. my
-                )
-
-                if math.random() > 0.75 then
-                    local lightFixture = createPart(
-                        Vector3.new(worldX, basePos.Y + wallHeight - 0.3, worldZ),
-                        Vector3.new(4, 0.4, 1.5),
-                        Color3.fromRGB(240, 235, 220), Enum.Material.Plastic, "LightFixture"
-                    )
-
-                    local lightTube = createPart(
-                        Vector3.new(worldX, basePos.Y + wallHeight - 0.5, worldZ),
-                        Vector3.new(3.5, 0.1, 1),
-                        Color3.fromRGB(255, 250, 230), Enum.Material.Neon, "LightTube"
-                    )
-
-                    local light = Instance.new("PointLight", lightTube)
-                    light.Brightness = 0.8
-                    light.Range = 12
-                    light.Color = Color3.fromRGB(255, 248, 220)
-                    light.Shadows = true
-
-                    task.spawn(function()
-                        while backroomsActive and lightTube.Parent do
-                            task.wait(math.random(5, 20))
-                            if math.random() > 0.6 then
-                                light.Enabled = false
-                                lightTube.Material = Enum.Material.SmoothPlastic
-                                lightTube.Color = Color3.fromRGB(80, 80, 80)
-                                task.wait(math.random(0.1, 0.5))
-                                light.Enabled = true
-                                lightTube.Material = Enum.Material.Neon
-                                lightTube.Color = Color3.fromRGB(255, 250, 230)
-                            end
-                        end
-                    end)
-                end
+            if c.N then
+                createPart("Wall_N", Vector3.new(CELL, WALL_HEIGHT, WALL_THICKNESS),
+                    origin + Vector3.new(centerX, WALL_HEIGHT / 2, (z - 1) * CELL), wallColor, Enum.Material.Fabric)
+            end
+            if c.W then
+                createPart("Wall_W", Vector3.new(WALL_THICKNESS, WALL_HEIGHT, CELL),
+                    origin + Vector3.new((x - 1) * CELL, WALL_HEIGHT / 2, centerZ), wallColor, Enum.Material.Fabric)
+            end
+            if x == SIZE and c.E then
+                createPart("Wall_E", Vector3.new(WALL_THICKNESS, WALL_HEIGHT, CELL),
+                    origin + Vector3.new(x * CELL, WALL_HEIGHT / 2, centerZ), wallColor, Enum.Material.Fabric)
+            end
+            if z == SIZE and c.S then
+                createPart("Wall_S", Vector3.new(CELL, WALL_HEIGHT, WALL_THICKNESS),
+                    origin + Vector3.new(centerX, WALL_HEIGHT / 2, z * CELL), wallColor, Enum.Material.Fabric)
             end
         end
-        if my % 5 == 0 then task.wait() end
+        if x % 4 == 0 then task.wait() end
     end
 
-    local hum = Instance.new("Sound", backroomsFolder)
+    -- Lâmpadas espaçadas para manter o clima sem criar milhares de luzes.
+    for x = 2, SIZE - 1, 4 do
+        for z = 2, SIZE - 1, 4 do
+            local lampPos = origin + Vector3.new((x - 0.5) * CELL, WALL_HEIGHT - 0.7, (z - 0.5) * CELL)
+            local lamp = createPart("FluorescentLight", Vector3.new(4.5, 0.22, 1.5),
+                lampPos, Color3.fromRGB(255, 250, 220), Enum.Material.Neon, false)
+            local light = Instance.new("PointLight")
+            light.Brightness = 0.8
+            light.Range = 17
+            light.Color = Color3.fromRGB(255, 239, 180)
+            light.Shadows = false
+            light.Parent = lamp
+        end
+        if x % 8 == 2 then task.wait() end
+    end
+
+    local hum = Instance.new("Sound")
+    hum.Name = "BackroomsHum"
     hum.SoundId = "rbxassetid://9070440337"
     hum.Looped = true
-    hum.Volume = 0.25
+    hum.Volume = 0.2
     hum.PlaybackSpeed = 0.85
+    hum.Parent = backroomsFolder
     hum:Play()
 
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(basePos + Vector3.new(0, 5, 0))
-    end
+    -- Entrada no centro do labirinto, dentro de uma célula aberta.
+    local spawnX = math.ceil(SIZE / 2)
+    local spawnZ = math.ceil(SIZE / 2)
+    character:PivotTo(CFrame.new(origin + Vector3.new((spawnX - 0.5) * CELL, 4, (spawnZ - 0.5) * CELL)))
+    print("[ADMIN V2] Backrooms gerado: " .. SIZE .. "x" .. SIZE .. " células.")
 end
 
 local function exitBackrooms()
+    if not backroomsActive then return end
     backroomsActive = false
-    if backroomsFolder then backroomsFolder:Destroy() end
 
-    if backroomsOriginalLighting then
-        for property, value in pairs(backroomsOriginalLighting) do
+    if backroomsFolder then
+        backroomsFolder:Destroy()
+        backroomsFolder = nil
+    end
+    for _, effectName in ipairs({"BackroomsCC_V2", "BackroomsBlur"}) do
+        local effect = Lighting:FindFirstChild(effectName)
+        if effect then effect:Destroy() end
+    end
+
+    if backroomsLightingSnapshot then
+        for property, value in pairs(backroomsLightingSnapshot) do
             Lighting[property] = value
         end
-        backroomsOriginalLighting = nil
-    end
-
-    if Lighting:FindFirstChild("BackroomsCC_V2") then
-        Lighting.BackroomsCC_V2:Destroy()
-    end
-    if Lighting:FindFirstChild("BackroomsBlur") then
-        Lighting.BackroomsBlur:Destroy()
+        backroomsLightingSnapshot = nil
     end
 
     local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if root and backroomsOriginalCFrame then
-        root.CFrame = backroomsOriginalCFrame
+    if character and backroomsReturnCFrame then
+        character:PivotTo(backroomsReturnCFrame)
     end
-    backroomsOriginalCFrame = nil
+    backroomsReturnCFrame = nil
+    print("[ADMIN V2] Retornou à posição original!")
 end
 
---// ==================== AURA DE CADEIRAS REAIS ====================
+--// ==================== AURA DE CADEIRAS DO MAPA (LOCAL) ====================
+-- Usa COPIAS locais de cadeiras encontradas no mapa. Os móveis originais
+-- do Brookhaven não são movidos nem alterados e os outros jogadores não
+-- recebem alterações feitas apenas pelo cliente.
 
 local auraActive = false
 local auraConnection = nil
 local auraParts = {}
 
-local function startAura()
-    if auraActive then return end
-    auraActive = true
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
-    local numChairs = 8
-    local radius = 8
-
-    for i = 1, numChairs do
-        local chair = Instance.new("Seat")
-        chair.Name = "AuraChair_" .. i
-        chair.Size = Vector3.new(3, 1, 3)
-        chair.BrickColor = BrickColor.new("Bright red")
-        chair.Material = Enum.Material.SmoothPlastic
-        chair.Anchored = false
-        chair.CanCollide = true
-        chair.Parent = Workspace
-
-        local back = Instance.new("Part")
-        back.Name = "AuraChairBack_" .. i
-        back.Size = Vector3.new(3, 3, 0.5)
-        back.BrickColor = BrickColor.new("Bright red")
-        back.Material = Enum.Material.SmoothPlastic
-        back.CanCollide = true
-        back.Parent = Workspace
-
-        local backWeld = Instance.new("WeldConstraint", back)
-        backWeld.Part0 = chair
-        backWeld.Part1 = back
-        back.CFrame = chair.CFrame * CFrame.new(0, 1.5, 1.2)
-
-        for _, legPos in ipairs({
-            Vector3.new(-1.2, -0.5, -1.2),
-            Vector3.new(1.2, -0.5, -1.2),
-            Vector3.new(-1.2, -0.5, 1.2),
-            Vector3.new(1.2, -0.5, 1.2)
-        }) do
-            local leg = Instance.new("Part")
-            leg.Name = "AuraChairLeg_" .. i
-            leg.Size = Vector3.new(0.3, 2, 0.3)
-            leg.BrickColor = BrickColor.new("Dark grey")
-            leg.Material = Enum.Material.Metal
-            leg.CanCollide = true
-            leg.Parent = Workspace
-
-            local legWeld = Instance.new("WeldConstraint", leg)
-            legWeld.Part0 = chair
-            legWeld.Part1 = leg
-            leg.CFrame = chair.CFrame * CFrame.new(legPos)
-        end
-
-        local bp = Instance.new("BodyPosition", chair)
-        bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bp.D = 100
-        bp.P = 10000
-
-        local bg = Instance.new("BodyGyro", chair)
-        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        bg.D = 100
-        bg.P = 10000
-
-        table.insert(auraParts, {chair = chair, bp = bp, bg = bg, back = back})
-    end
-
-    auraConnection = RunService.Heartbeat:Connect(function()
-        if not auraActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            stopAura()
-            return
-        end
-        local root = LocalPlayer.Character.HumanoidRootPart
-        local t = tick() * 1.5
-
-        for i, data in ipairs(auraParts) do
-            local angle = (i / numChairs) * math.pi * 2 + t
-            local x = math.cos(angle) * radius
-            local z = math.sin(angle) * radius
-            local targetPos = (root.CFrame * CFrame.new(x, 0, z)).Position
-            data.bp.Position = targetPos
-            data.bg.CFrame = CFrame.new(data.chair.Position, root.Position)
-
-            if data.back then
-                data.back.CFrame = data.chair.CFrame * CFrame.new(0, 1.5, 1.2)
+local function findMapChairs(limit)
+    local found, seen = {}, {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if #found >= limit then break end
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local lowerName = string.lower(obj.Name)
+            local namedChair = string.find(lowerName, "chair", 1, true)
+                or string.find(lowerName, "seat", 1, true)
+                or string.find(lowerName, "cadeira", 1, true)
+            local hasSeat = obj:IsA("Seat") or obj:IsA("VehicleSeat")
+            if (namedChair or hasSeat) and not seen[obj] then
+                local model = obj:IsA("Model") and obj or obj:FindFirstAncestorOfClass("Model")
+                local source = model or obj
+                if source ~= Workspace and not string.find(string.lower(source.Name), "aura", 1, true)
+                    and not seen[source] then
+                    local hasPart = source:IsA("BasePart") or source:FindFirstChildWhichIsA("BasePart", true)
+                    if hasPart then
+                        seen[source] = true
+                        table.insert(found, source)
+                    end
+                end
             end
         end
-    end)
-
-    warn("Aura de cadeiras REAL ativada!")
+    end
+    return found
 end
 
 local function stopAura()
-    if not auraActive then return end
     auraActive = false
     if auraConnection then
         auraConnection:Disconnect()
         auraConnection = nil
     end
-    for _, data in ipairs(auraParts) do
-        if typeof(data) == "table" then
-            if data.chair then data.chair:Destroy() end
-            if data.back then data.back:Destroy() end
+    for _, clone in ipairs(auraParts) do
+        if clone and clone.Parent then clone:Destroy() end
+    end
+    table.clear(auraParts)
+    warn("[ADMIN V2] Aura de cadeiras parada.")
+end
+
+local function startAura()
+    if auraActive then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        warn("[ADMIN V2] Personagem ainda não está pronto.")
+        return
+    end
+
+    local sources = findMapChairs(8)
+    if #sources == 0 then
+        warn("[ADMIN V2] Não encontrei cadeiras no mapa carregado.")
+        return
+    end
+
+    auraActive = true
+    local radius = 7
+    for _, source in ipairs(sources) do
+        local ok, clone = pcall(function() return source:Clone() end)
+        if ok and clone then
+            clone.Name = "ADMIN_V2_AuraChair_Local"
+            for _, item in ipairs(clone:GetDescendants()) do
+                if item:IsA("BasePart") then
+                    item.Anchored = true
+                    item.CanCollide = false
+                    item.CanTouch = false
+                    item.CanQuery = false
+                elseif item:IsA("Script") or item:IsA("LocalScript") then
+                    item:Destroy()
+                end
+            end
+            if clone:IsA("BasePart") then
+                clone.Anchored = true
+                clone.CanCollide = false
+                clone.CanTouch = false
+                clone.CanQuery = false
+            end
+            clone.Parent = Workspace
+            table.insert(auraParts, clone)
         end
     end
-    auraParts = {}
-    warn("Aura de cadeiras desativada.")
+
+    if #auraParts == 0 then
+        auraActive = false
+        warn("[ADMIN V2] Não foi possível copiar as cadeiras encontradas.")
+        return
+    end
+
+    auraConnection = RunService.Heartbeat:Connect(function()
+        local currentCharacter = LocalPlayer.Character
+        local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+        if not auraActive or not currentRoot then
+            stopAura()
+            return
+        end
+
+        local now = os.clock() * 1.15
+        local count = #auraParts
+        for i, clone in ipairs(auraParts) do
+            if clone and clone.Parent then
+                local angle = ((i - 1) / count) * math.pi * 2 + now
+                local offset = Vector3.new(math.cos(angle) * radius, 1.5, math.sin(angle) * radius)
+                local position = currentRoot.Position + offset
+                local target = CFrame.lookAt(position, currentRoot.Position)
+                pcall(function()
+                    if clone:IsA("Model") then
+                        clone:PivotTo(target)
+                    elseif clone:IsA("BasePart") then
+                        clone.CFrame = target
+                    end
+                end)
+            end
+        end
+    end)
+
+    warn("[ADMIN V2] Aura local ativada com " .. #auraParts .. " cadeiras copiadas do mapa.")
 end
 
 --// ==================== ANTI-TOOLS/KICK/BAN ====================
@@ -1367,6 +1355,30 @@ if ok and WindUILib then
 
     local SectionActions = TabMain:Section({ Title = "Acoes Principais", Icon = "user-cog", Opened = true })
 
+    SectionActions:Button({
+        Title = "Pegar Carrinho",
+        Desc = "Equipa o carrinho se ele já estiver disponível no inventário do jogo.",
+        Callback = function()
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            local character = LocalPlayer.Character
+            if not backpack or not character then return end
+
+            local cartNames = {"Shopping Cart", "ShoppingCart", "Cart", "Carrinho"}
+            local cart = nil
+            for _, name in ipairs(cartNames) do
+                cart = backpack:FindFirstChild(name) or character:FindFirstChild(name)
+                if cart then break end
+            end
+
+            if cart and cart:IsA("Tool") then
+                cart.Parent = character
+                warn("[ADMIN V2] Carrinho equipado.")
+            else
+                warn("[ADMIN V2] Carrinho não está disponível no inventário. Pegue-o primeiro pelo sistema oficial de móveis do Brookhaven.")
+            end
+        end
+    })
+
     local DropdownMain = SectionActions:Dropdown({
         Title = "Selecionar Jogador",
         Values = getPlayersList(),
@@ -1431,7 +1443,7 @@ if ok and WindUILib then
     })
     SectionActions:Button({
         Title = ";aura",
-        Desc = "Cria aura de cadeiras REAIS (outros jogadores veem e sentam)",
+        Desc = "Copia cadeiras do mapa e faz elas girarem ao seu redor (efeito local)",
         Callback = function() startAura() end
     })
     SectionActions:Button({
@@ -1478,15 +1490,15 @@ if ok and WindUILib then
         end
     })
 
-    local SectionBackrooms = TabVisuals:Section({ Title = "Backrooms", Icon = "scan-eye", Opened = true })
-    SectionBackrooms:Button({
-        Title = ";Backrooms",
-        Desc = "Cria um labirinto grande com corredores estreitos, cruzamentos e varias rotas alternativas.",
+    local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
+    SectionAmb:Button({
+        Title = ";Backrooms", 
+        Desc = "Labirinto enorme, corredores estreitos e caminhos alternativos.", 
         Callback = function() executeBackrooms() end
     })
-    SectionBackrooms:Button({
-        Title = "Voltar",
-        Desc = "Retorna exatamente para a posicao em que voce estava antes de entrar.",
+    SectionAmb:Button({
+        Title = "Voltar à posição original", 
+        Desc = "Sai do Backrooms e restaura sua posição e iluminação.", 
         Callback = function() exitBackrooms() end
     })
 
