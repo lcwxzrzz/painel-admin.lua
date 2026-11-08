@@ -112,7 +112,9 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     if CurrentHum then
         if ZeroHub.SavedWalkSpeed then CurrentHum.WalkSpeed = ZeroHub.SavedWalkSpeed end
         if ZeroHub.SavedJumpPower then CurrentHum.JumpPower = ZeroHub.SavedJumpPower end
-        if ZeroHub.Toggles.AntiSeat then CurrentHum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end
+        if ZeroHub.Toggles.AntiSeat or ZeroHub.Toggles.AntiBang then
+            CurrentHum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        end
     end
 end)
 
@@ -273,6 +275,8 @@ local Tabs = {
     Player = Window:Tab({ Title = "Script", Icon = "code" }),
     Teleports = Window:Tab({ Title = "Teleports", Icon = "map-pin" }),
     Items = Window:Tab({ Title = "Items & Dupe", Icon = "package" }),
+    Tools = Window:Tab({ Title = "Ferramentas", Icon = "toolbox" }),
+    Protection = Window:Tab({ Title = "Proteção", Icon = "shield-check" }),
     Vehicles = Window:Tab({ Title = "Vehicles", Icon = "car" }),
     Target = Window:Tab({ Title = "Target & Troll", Icon = "crosshair" }),
     Family = Window:Tab({ Title = "Family & Baby", Icon = "heart" }),
@@ -329,44 +333,6 @@ Tabs.Player:Button({
     Title = "Refresh Player List",
     Desc = "Atualiza os jogadores disponíveis",
     Callback = refreshScriptPlayerDropdown
-})
-
-Tabs.Player:Section({ Title = "Vehicle Items" })
-Tabs.Player:Button({
-    Title = "Pegar Carrinho",
-    Desc = "Solicita o Wagon para seu inventário",
-    Callback = function()
-        local remote = Remotes.Tool or (RE and RE:FindFirstChild("1Too1l"))
-        if not remote then
-            notify("Carrinho", "Remote de itens não encontrado")
-            return
-        end
-        task.spawn(function()
-            local ok, err = pcall(function()
-                remote:InvokeServer("PickingTools", "Wagon")
-            end)
-            task.wait(0.8)
-            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-            local character = LocalPlayer.Character
-            local wagon = (backpack and backpack:FindFirstChild("Wagon"))
-                or (character and character:FindFirstChild("Wagon"))
-            if wagon then
-                notify("Carrinho", "Wagon encontrado no inventário")
-            elseif not ok then
-                notify("Carrinho", "Falha ao solicitar: " .. tostring(err))
-            else
-                notify("Carrinho", "O servidor não confirmou a entrega do Wagon")
-            end
-        end)
-    end
-})
-
-Tabs.Player:Button({
-    Title = "Cart Kill",
-    Desc = "Ação de expulsar outro jogador do mapa não está disponível",
-    Callback = function()
-        notify("Cart Kill", "Não implementado: não posso automatizar a expulsão forçada de outro jogador")
-    end
 })
 
 -- Backrooms locais: cenário visual criado apenas neste cliente.
@@ -623,17 +589,6 @@ Tabs.Player:Toggle({
 
 Tabs.Player:Section({ Title = "Player Utilities" })
 
-Tabs.Player:Toggle({
-    Title = "Anti-Seat",
-    Desc = "Prevents your character from sitting down",
-    Value = false,
-    Callback = function(state)
-        local hum = getHum()
-        if hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, not state)
-        end
-    end
-})
 
 Tabs.Player:Toggle({
     Title = "Click TP",
@@ -753,6 +708,172 @@ Tabs.Teleports:Button({
 })
 
 -- =========================================================================
+-- TAB: PROTEÇÃO
+-- =========================================================================
+Tabs.Protection:Section({ Title = "Proteções locais" })
+Tabs.Protection:Section({ Title = "Defesas do personagem local" })
+
+local function setProtectionConnection(key, enabled, callback)
+    local existing = ZeroHub.Connections[key]
+    if existing then
+        existing:Disconnect()
+        ZeroHub.Connections[key] = nil
+    end
+    ZeroHub.Toggles[key] = enabled
+    if enabled then
+        ZeroHub.Connections[key] = RunService.Heartbeat:Connect(callback)
+    end
+end
+
+Tabs.Protection:Toggle({
+    Title = "Anti-Seat",
+    Desc = "Desativa o estado sentado do seu personagem",
+    Value = false,
+    Callback = function(state)
+        ZeroHub.Toggles.AntiSeat = state
+        local hum = getHum()
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, not state)
+            if state and hum.Sit then hum.Sit = false end
+        end
+    end
+})
+
+Tabs.Protection:Toggle({
+    Title = "Anti Ragdoll",
+    Desc = "Tenta recuperar seu personagem de estados de queda forçada",
+    Value = false,
+    Callback = function(state)
+        if ZeroHub.Connections.AntiRagdoll then
+            ZeroHub.Connections.AntiRagdoll:Disconnect()
+            ZeroHub.Connections.AntiRagdoll = nil
+        end
+        ZeroHub.Toggles.AntiRagdoll = state
+        if state then
+            ZeroHub.Connections.AntiRagdoll = RunService.Heartbeat:Connect(function()
+                local hum = getHum()
+                if hum and hum.Health > 0 then
+                    local currentState = hum:GetState()
+                    if currentState == Enum.HumanoidStateType.Ragdoll
+                        or currentState == Enum.HumanoidStateType.FallingDown then
+                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+Tabs.Protection:Toggle({
+    Title = "Anti Bang / Anti Forced Sit",
+    Desc = "Tenta impedir que seu personagem fique sentado sem sua intenção",
+    Value = false,
+    Callback = function(state)
+        ZeroHub.Toggles.AntiBang = state
+        local hum = getHum()
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, not state)
+            if state and hum.Sit then
+                hum.Sit = false
+            end
+        end
+        if ZeroHub.Connections.AntiBang then
+            ZeroHub.Connections.AntiBang:Disconnect()
+            ZeroHub.Connections.AntiBang = nil
+        end
+        if state then
+            ZeroHub.Connections.AntiBang = RunService.Heartbeat:Connect(function()
+                local currentHum = getHum()
+                if currentHum and currentHum.Health > 0 and currentHum.Sit then
+                    currentHum.Sit = false
+                    currentHum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end)
+        end
+    end
+})
+
+Tabs.Protection:Toggle({
+    Title = "Anti Tornado",
+    Desc = "Reduz giros e velocidades anormais no seu personagem",
+    Value = false,
+    Callback = function(state)
+        if ZeroHub.Connections.AntiTornado then
+            ZeroHub.Connections.AntiTornado:Disconnect()
+            ZeroHub.Connections.AntiTornado = nil
+        end
+        ZeroHub.Toggles.AntiTornado = state
+        if state then
+            ZeroHub.Connections.AntiTornado = RunService.Heartbeat:Connect(function()
+                local root = getHRP()
+                if root and root.Parent then
+                    local linear = root.AssemblyLinearVelocity
+                    local angular = root.AssemblyAngularVelocity
+                    if linear.Magnitude > 95 or angular.Magnitude > 28 then
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end)
+        end
+    end
+})
+
+Tabs.Protection:Toggle({
+    Title = "Anti Fling",
+    Desc = "Tenta estabilizar seu personagem quando recebe impulso extremo",
+    Value = false,
+    Callback = function(state)
+        if ZeroHub.Connections.AntiFling then
+            ZeroHub.Connections.AntiFling:Disconnect()
+            ZeroHub.Connections.AntiFling = nil
+        end
+        ZeroHub.Toggles.AntiFling = state
+        if state then
+            ZeroHub.Connections.AntiFling = RunService.Heartbeat:Connect(function()
+                local root = getHRP()
+                local hum = getHum()
+                if root and hum and hum.Health > 0 then
+                    if root.AssemblyLinearVelocity.Magnitude > 115 then
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end)
+        end
+    end
+})
+
+Tabs.Protection:Toggle({
+    Title = "Anti Void",
+    Desc = "Retorna você ao último ponto seguro se cair muito abaixo do mapa",
+    Value = false,
+    Callback = function(state)
+        if ZeroHub.Connections.AntiVoid then
+            ZeroHub.Connections.AntiVoid:Disconnect()
+            ZeroHub.Connections.AntiVoid = nil
+        end
+        ZeroHub.Toggles.AntiVoid = state
+        local lastSafe = nil
+        if state then
+            ZeroHub.Connections.AntiVoid = RunService.Heartbeat:Connect(function()
+                local root = getHRP()
+                local hum = getHum()
+                if root and hum and hum.Health > 0 then
+                    if root.Position.Y > -20 then
+                        lastSafe = root.CFrame
+                    elseif lastSafe then
+                        root.CFrame = lastSafe
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- =========================================================================
 -- TAB 4: ITEMS & DUPE
 -- =========================================================================
 Tabs.Items:Section({ Title = "Fast Item Duplicator" })
@@ -863,8 +984,48 @@ Tabs.Items:Button({
     end
 })
 
-Tabs.Items:Button({
-    Title = "Get All Items (Instant Async)",
+-- =========================================================================
+-- TAB: FERRAMENTAS
+-- =========================================================================
+Tabs.Tools:Section({ Title = "Resgatar Ferramentas" })
+
+Tabs.Tools:Section({ Title = "Armas e Itens Especiais" })
+
+local SPECIAL_TOOLS = {
+    "AA-12", "AUG", "Bomb", "Bow", "Cannon", "ChainSaw",
+    "Knife", "LaserGun", "NailGun", "ShotPBlue", "Taser",
+    "WaterGun", "Winchester", "SmokeGrenade", "SnowballCannon"
+}
+local selectedSpecialTool = SPECIAL_TOOLS[1]
+
+Tabs.Tools:Dropdown({
+    Title = "Selecionar ferramenta",
+    Values = SPECIAL_TOOLS,
+    Value = selectedSpecialTool,
+    Callback = function(value)
+        selectedSpecialTool = value
+    end
+})
+
+Tabs.Tools:Button({
+    Title = "Resgatar ferramenta selecionada",
+    Desc = "Solicita a ferramenta selecionada ao jogo",
+    Callback = function()
+        if not selectedSpecialTool then return end
+        equipToolByName(selectedSpecialTool)
+        task.delay(0.6, function()
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            local character = LocalPlayer.Character
+            local found = (backpack and backpack:FindFirstChild(selectedSpecialTool))
+                or (character and character:FindFirstChild(selectedSpecialTool))
+            notify("Ferramentas", found and (selectedSpecialTool .. " recebido")
+                or ("Solicitação enviada: " .. selectedSpecialTool))
+        end)
+    end
+})
+
+Tabs.Tools:Button({
+    Title = "Resgatar Todas as Ferramentas",
     Desc = "Concurrently fetches all missing items into backpack",
     Callback = function()
         local toolRemote = Remotes.Tool or (RE and RE:FindFirstChild("1Too1l"))
@@ -891,10 +1052,10 @@ Tabs.Items:Button({
     end
 })
 
-Tabs.Items:Section({ Title = "Vehicle Items" })
+Tabs.Tools:Section({ Title = "Veículos e Carrinhos" })
 
-Tabs.Items:Button({
-    Title = "Pegar Carrinho",
+Tabs.Tools:Button({
+    Title = "Pegar Carrinho (Wagon)",
     Desc = "Solicita o Wagon para o seu inventário",
     Callback = function()
         local toolRemote = Remotes.Tool or (RE and RE:FindFirstChild("1Too1l"))
@@ -925,7 +1086,7 @@ Tabs.Items:Button({
     end
 })
 
-Tabs.Items:Section({ Title = "Secret Items" })
+Tabs.Tools:Section({ Title = "Secret Items" })
 
 local SECRET_TOOLS_LIST = {
     ["ChainSaw"] = "ChainSaw",
@@ -939,7 +1100,7 @@ local SECRET_TOOLS_LIST = {
 }
 
 for title, name in pairs(SECRET_TOOLS_LIST) do
-    Tabs.Items:Button({
+    Tabs.Tools:Button({
         Title = "Get " .. title,
         Desc = "Instantly gives you " .. title,
         Callback = function()
@@ -949,9 +1110,9 @@ for title, name in pairs(SECRET_TOOLS_LIST) do
     })
 end
 
-Tabs.Items:Section({ Title = "Inventory Controls" })
+Tabs.Tools:Section({ Title = "Inventory Controls" })
 
-Tabs.Items:Button({
+Tabs.Tools:Button({
     Title = "Equip All Tools",
     Desc = "Equips every tool in your backpack at once",
     Callback = function()
@@ -966,7 +1127,7 @@ Tabs.Items:Button({
     end
 })
 
-Tabs.Items:Button({
+Tabs.Tools:Button({
     Title = "Drop All Items",
     Desc = "Drops all tools out of your inventory onto the floor",
     Callback = function()
@@ -986,7 +1147,7 @@ Tabs.Items:Button({
     end
 })
 
-Tabs.Items:Button({
+Tabs.Tools:Button({
     Title = "Clear Inventory",
     Desc = "Deletes all tools in your backpack",
     Callback = function()
