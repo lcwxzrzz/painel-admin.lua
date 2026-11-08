@@ -675,6 +675,40 @@ Tabs.Items:Button({
     end
 })
 
+Tabs.Items:Section({ Title = "Vehicle Items" })
+
+Tabs.Items:Button({
+    Title = "Pegar Carrinho",
+    Desc = "Solicita o Wagon para o seu inventário",
+    Callback = function()
+        local toolRemote = Remotes.Tool or (RE and RE:FindFirstChild("1Too1l"))
+        if not toolRemote then
+            notify("Carrinho", "Tool remote not found")
+            return
+        end
+
+        task.spawn(function()
+            local ok = pcall(function()
+                toolRemote:InvokeServer("PickingTools", "Wagon")
+            end)
+
+            task.wait(0.5)
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            local character = LocalPlayer.Character
+            local hasWagon = (backpack and backpack:FindFirstChild("Wagon"))
+                or (character and character:FindFirstChild("Wagon"))
+
+            if hasWagon then
+                notify("Carrinho", "Carrinho adicionado ao inventário")
+            elseif not ok then
+                notify("Carrinho", "Não foi possível solicitar o carrinho")
+            else
+                notify("Carrinho", "O jogo não confirmou o carrinho no inventário")
+            end
+        end)
+    end
+})
+
 Tabs.Items:Section({ Title = "Secret Items" })
 
 local SECRET_TOOLS_LIST = {
