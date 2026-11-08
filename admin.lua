@@ -270,7 +270,7 @@ end)
 
 -- [ Tabs Definition ]
 local Tabs = {
-    Player = Window:Tab({ Title = "Player", Icon = "user" }),
+    Player = Window:Tab({ Title = "Script", Icon = "code" }),
     Teleports = Window:Tab({ Title = "Teleports", Icon = "map-pin" }),
     Items = Window:Tab({ Title = "Items & Dupe", Icon = "package" }),
     Vehicles = Window:Tab({ Title = "Vehicles", Icon = "car" }),
@@ -284,8 +284,224 @@ local Tabs = {
 }
 
 -- =========================================================================
--- TAB 2: PLAYER
+-- TAB 2: SCRIPT (renamed from Player)
 -- =========================================================================
+ZeroHub.ScriptTargetPlayer = nil
+
+Tabs.Player:Section({ Title = "Player Selector" })
+
+local ScriptPlayerDropdown = Tabs.Player:Dropdown({
+    Title = "Select Player",
+    Values = getPlayerList(),
+    Value = "None",
+    Callback = function(selected)
+        ZeroHub.ScriptTargetPlayer = getPlayerByName(selected)
+        ZeroHub.TargetPlayer = ZeroHub.ScriptTargetPlayer
+    end
+})
+
+local function refreshScriptPlayerDropdown()
+    pcall(function()
+        local list = getPlayerList()
+        local current = ZeroHub.ScriptTargetPlayer and ZeroHub.ScriptTargetPlayer.Name or "None"
+        if not table.find(list, current) then
+            current = "None"
+            ZeroHub.ScriptTargetPlayer = nil
+        end
+        ScriptPlayerDropdown:Refresh(list, current)
+    end)
+end
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    refreshScriptPlayerDropdown()
+end)
+Players.PlayerRemoving:Connect(function(player)
+    if ZeroHub.ScriptTargetPlayer == player then
+        ZeroHub.ScriptTargetPlayer = nil
+        ZeroHub.TargetPlayer = nil
+    end
+    task.wait(0.5)
+    refreshScriptPlayerDropdown()
+end)
+
+Tabs.Player:Button({
+    Title = "Refresh Player List",
+    Desc = "Atualiza os jogadores disponíveis",
+    Callback = refreshScriptPlayerDropdown
+})
+
+Tabs.Player:Section({ Title = "Vehicle Items" })
+Tabs.Player:Button({
+    Title = "Pegar Carrinho",
+    Desc = "Solicita o Wagon para seu inventário",
+    Callback = function()
+        local remote = Remotes.Tool or (RE and RE:FindFirstChild("1Too1l"))
+        if not remote then
+            notify("Carrinho", "Remote de itens não encontrado")
+            return
+        end
+        task.spawn(function()
+            local ok, err = pcall(function()
+                remote:InvokeServer("PickingTools", "Wagon")
+            end)
+            task.wait(0.8)
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            local character = LocalPlayer.Character
+            local wagon = (backpack and backpack:FindFirstChild("Wagon"))
+                or (character and character:FindFirstChild("Wagon"))
+            if wagon then
+                notify("Carrinho", "Wagon encontrado no inventário")
+            elseif not ok then
+                notify("Carrinho", "Falha ao solicitar: " .. tostring(err))
+            else
+                notify("Carrinho", "O servidor não confirmou a entrega do Wagon")
+            end
+        end)
+    end
+})
+
+Tabs.Player:Button({
+    Title = "Cart Kill",
+    Desc = "Ação de expulsar outro jogador do mapa não está disponível",
+    Callback = function()
+        notify("Cart Kill", "Não implementado: não posso automatizar a expulsão forçada de outro jogador")
+    end
+})
+
+-- Backrooms locais: cenário visual criado apenas neste cliente.
+local BackroomsFolder = nil
+local BackroomsReturnCFrame = nil
+local BackroomsAtmosphere = nil
+
+local function createBackrooms()
+    if BackroomsFolder then
+        notify("Backrooms", "O labirinto já está ativo")
+        return
+    end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        notify("Backrooms", "Personagem não encontrado")
+        return
+    end
+
+    BackroomsReturnCFrame = root.CFrame
+    local origin = root.Position + Vector3.new(0, 850, 0)
+    BackroomsFolder = Instance.new("Folder")
+    BackroomsFolder.Name = "ADMIN_V2_BACKROOMS_LOCAL"
+    BackroomsFolder.Parent = Workspace
+
+    local SIZE, CELL, WALL_HEIGHT, WALL_THICKNESS = 50, 16, 17, 1.2
+    local total = SIZE * CELL
+    local yellow = Color3.fromRGB(190, 177, 105)
+
+    local function part(name, size, offset, color, material)
+        local obj = Instance.new("Part")
+        obj.Name = name
+        obj.Size = size
+        obj.CFrame = CFrame.new(origin + offset)
+        obj.Anchored = true
+        obj.CanCollide = true
+        obj.Color = color
+        obj.Material = material or Enum.Material.SmoothPlastic
+        obj.TopSurface = Enum.SurfaceType.Smooth
+        obj.BottomSurface = Enum.SurfaceType.Smooth
+        obj.Parent = BackroomsFolder
+        return obj
+    end
+
+    local cells = table.create(SIZE)
+    for x = 1, SIZE do
+        cells[x] = table.create(SIZE)
+        for z = 1, SIZE do
+            cells[x][z] = {visited = false, N = true, S = true, E = true, W = true}
+        end
+    end
+
+    local rng = Random.new()
+    local stack = {{x = 1, z = 1}}
+    cells[1][1].visited = true
+    while #stack > 0 do
+        local current = stack[#stack]
+        local x, z = current.x, current.z
+        local options = {}
+        if z > 1 and not cells[x][z-1].visited then table.insert(options, {x=x,z=z-1,wall="N",opposite="S"}) end
+        if z < SIZE and not cells[x][z+1].visited then table.insert(options, {x=x,z=z+1,wall="S",opposite="N"}) end
+        if x < SIZE and not cells[x+1][z].visited then table.insert(options, {x=x+1,z=z,wall="E",opposite="W"}) end
+        if x > 1 and not cells[x-1][z].visited then table.insert(options, {x=x-1,z=z,wall="W",opposite="E"}) end
+        if #options == 0 then
+            table.remove(stack)
+        else
+            local nextCell = options[rng:NextInteger(1, #options)]
+            cells[x][z][nextCell.wall] = false
+            cells[nextCell.x][nextCell.z][nextCell.opposite] = false
+            cells[nextCell.x][nextCell.z].visited = true
+            table.insert(stack, {x = nextCell.x, z = nextCell.z})
+        end
+    end
+
+    part("Floor", Vector3.new(total, 2, total), Vector3.new(total/2, -1, total/2), Color3.fromRGB(125,113,77), Enum.Material.Fabric)
+    part("Ceiling", Vector3.new(total, 2, total), Vector3.new(total/2, WALL_HEIGHT, total/2), Color3.fromRGB(215,205,153), Enum.Material.Fabric)
+
+    for x = 1, SIZE do
+        for z = 1, SIZE do
+            local c = cells[x][z]
+            local px, pz = (x - 0.5) * CELL, (z - 0.5) * CELL
+            if c.N then part("Wall", Vector3.new(CELL,WALL_HEIGHT,WALL_THICKNESS), Vector3.new(px,WALL_HEIGHT/2,(z-1)*CELL), yellow, Enum.Material.Fabric) end
+            if c.W then part("Wall", Vector3.new(WALL_THICKNESS,WALL_HEIGHT,CELL), Vector3.new((x-1)*CELL,WALL_HEIGHT/2,pz), yellow, Enum.Material.Fabric) end
+            if x == SIZE and c.E then part("Wall", Vector3.new(WALL_THICKNESS,WALL_HEIGHT,CELL), Vector3.new(x*CELL,WALL_HEIGHT/2,pz), yellow, Enum.Material.Fabric) end
+            if z == SIZE and c.S then part("Wall", Vector3.new(CELL,WALL_HEIGHT,WALL_THICKNESS), Vector3.new(px,WALL_HEIGHT/2,z*CELL), yellow, Enum.Material.Fabric) end
+        end
+    end
+
+    for x = 1, SIZE, 2 do
+        for z = 1, SIZE, 2 do
+            local lamp = part("FluorescentLight", Vector3.new(7,0.35,3), Vector3.new((x-0.5)*CELL,WALL_HEIGHT-1,(z-0.5)*CELL), Color3.fromRGB(255,255,220), Enum.Material.Neon)
+            local light = Instance.new("PointLight")
+            light.Brightness = 1.1
+            light.Range = 22
+            light.Color = Color3.fromRGB(255,242,185)
+            light.Parent = lamp
+        end
+    end
+
+    BackroomsAtmosphere = Instance.new("Atmosphere")
+    BackroomsAtmosphere.Name = "ADMIN_V2_BACKROOMS_ATMOSPHERE"
+    BackroomsAtmosphere.Density = 0.28
+    BackroomsAtmosphere.Haze = 1.5
+    BackroomsAtmosphere.Parent = game:GetService("Lighting")
+
+    character:PivotTo(CFrame.new(origin + Vector3.new(CELL/2, 5, CELL/2)))
+    notify("Backrooms", "Labirinto local 50x50 criado")
+end
+
+local function leaveBackrooms()
+    if not BackroomsFolder then
+        notify("Backrooms", "Você não está no labirinto")
+        return
+    end
+    local character = LocalPlayer.Character
+    if character and BackroomsReturnCFrame then character:PivotTo(BackroomsReturnCFrame) end
+    BackroomsFolder:Destroy()
+    BackroomsFolder = nil
+    if BackroomsAtmosphere then BackroomsAtmosphere:Destroy(); BackroomsAtmosphere = nil end
+    BackroomsReturnCFrame = nil
+    notify("Backrooms", "Retornou ao local original")
+end
+
+Tabs.Player:Section({ Title = "Local Backrooms" })
+Tabs.Player:Button({
+    Title = ";Bring Backrooms",
+    Desc = "Cria um labirinto local grande e leva você até ele",
+    Callback = createBackrooms
+})
+Tabs.Player:Button({
+    Title = "Return From Backrooms",
+    Desc = "Remove o labirinto e retorna ao ponto salvo",
+    Callback = leaveBackrooms
+})
+
 Tabs.Player:Section({ Title = "Movement" })
 
 Tabs.Player:Slider({
