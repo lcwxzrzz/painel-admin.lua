@@ -40,6 +40,8 @@ local currentSound = nil
 local currentSoundVolume = 0.5
 local backroomsFolder = nil
 local backroomsActive = false
+local backroomsOriginalCFrame = nil
+local backroomsOriginalLighting = nil
 local TargetName = ""
 local AvatarName = ""
 local currentBillboard = nil
@@ -342,10 +344,43 @@ local function generateMazeRecursiveBacktracker(width, height)
     end
 
     carve(math.floor(width / 2) + 1, math.floor(height / 2) + 1)
+
+    -- Abre passagens extras entre celulas vizinhas para criar rotas alternativas,
+    -- cruzamentos e circuitos em vez de um unico caminho principal.
+    for y = 1, height do
+        for x = 1, width do
+            if x < width and math.random() < 0.20 then
+                maze[y * 2][x * 2 + 1] = 0
+            end
+            if y < height and math.random() < 0.20 then
+                maze[y * 2 + 1][x * 2] = 0
+            end
+        end
+    end
+
     return maze
 end
 
 local function executeBackrooms()
+    if backroomsActive then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        warn("Nao foi possivel entrar: personagem ainda nao carregou.")
+        return
+    end
+
+    backroomsOriginalCFrame = root.CFrame
+    backroomsOriginalLighting = {
+        FogColor = Lighting.FogColor,
+        FogEnd = Lighting.FogEnd,
+        FogStart = Lighting.FogStart,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Brightness = Lighting.Brightness,
+        ColorShift_Bottom = Lighting.ColorShift_Bottom,
+        ColorShift_Top = Lighting.ColorShift_Top,
+    }
     backroomsActive = true
     if backroomsFolder then backroomsFolder:Destroy() end
 
@@ -374,8 +409,8 @@ local function executeBackrooms()
     blur.Name = "BackroomsBlur"
     blur.Size = 3
 
-    local mazeWidth = 25
-    local mazeHeight = 25
+    local mazeWidth = 30
+    local mazeHeight = 30
     local cellSize = 12
     local wallHeight = 25
     local maze = generateMazeRecursiveBacktracker(mazeWidth, mazeHeight)
@@ -465,6 +500,7 @@ local function executeBackrooms()
                 end
             end
         end
+        if my % 5 == 0 then task.wait() end
     end
 
     local hum = Instance.new("Sound", backroomsFolder)
@@ -483,13 +519,12 @@ local function exitBackrooms()
     backroomsActive = false
     if backroomsFolder then backroomsFolder:Destroy() end
 
-    Lighting.FogEnd = 100000
-    Lighting.FogStart = 0
-    Lighting.Ambient = Color3.fromRGB(127, 127, 127)
-    Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
-    Lighting.Brightness = 2
-    Lighting.ColorShift_Bottom = Color3.fromRGB(0, 0, 0)
-    Lighting.ColorShift_Top = Color3.fromRGB(0, 0, 0)
+    if backroomsOriginalLighting then
+        for property, value in pairs(backroomsOriginalLighting) do
+            Lighting[property] = value
+        end
+        backroomsOriginalLighting = nil
+    end
 
     if Lighting:FindFirstChild("BackroomsCC_V2") then
         Lighting.BackroomsCC_V2:Destroy()
@@ -498,9 +533,12 @@ local function exitBackrooms()
         Lighting.BackroomsBlur:Destroy()
     end
 
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(0, 5, 0)
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root and backroomsOriginalCFrame then
+        root.CFrame = backroomsOriginalCFrame
     end
+    backroomsOriginalCFrame = nil
 end
 
 --// ==================== AURA DE CADEIRAS REAIS ====================
@@ -1440,15 +1478,15 @@ if ok and WindUILib then
         end
     })
 
-    local SectionAmb = TabVisuals:Section({ Title = "Ambiente e Horror", Icon = "ghost", Opened = true })
-    SectionAmb:Button({
-        Title = "Entrar no Backrooms (Level 0)", 
-        Desc = "Labirinto REAL com Recursive Backtracker! Sem ver o fim!", 
+    local SectionBackrooms = TabVisuals:Section({ Title = "Backrooms", Icon = "scan-eye", Opened = true })
+    SectionBackrooms:Button({
+        Title = ";Backrooms",
+        Desc = "Cria um labirinto grande com corredores estreitos, cruzamentos e varias rotas alternativas.",
         Callback = function() executeBackrooms() end
     })
-    SectionAmb:Button({
-        Title = "Sair do Backrooms", 
-        Desc = "Reseta ambiente e te tira de la", 
+    SectionBackrooms:Button({
+        Title = "Voltar",
+        Desc = "Retorna exatamente para a posicao em que voce estava antes de entrar.",
         Callback = function() exitBackrooms() end
     })
 
